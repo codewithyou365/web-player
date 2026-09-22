@@ -86,14 +86,15 @@ async function scan() {
       const prevEps = new Map(((prev && prev.episodes) || []).map((e) => [e.path + ':' + e.size, e]));
       for (const ep of show.episodes) {
         const cached = prevEps.get(ep.path + ':' + ep.size);
-        if (cached && cached.duration) {
-          ep.duration = cached.duration;
-          ep.vcodec = cached.vcodec;
-          ep.acodec = cached.acodec;
-          continue;
+        let info;
+        if (cached && cached.duration && cached.format) {
+          info = { duration: cached.duration, format: cached.format, vcodec: cached.vcodec, acodec: cached.acodec };
+        } else {
+          info = await media.probe(ep.path);
         }
-        const info = await media.probe(ep.path);
         if (info) Object.assign(ep, info);
+        // 不信后缀，按真实容器/编码决定能否直接播放
+        ep.native = media.isBrowserPlayable(info);
       }
       const coverFile = path.join(lib.COVERS_DIR, show.id + '.jpg');
       if (!fs.existsSync(coverFile)) {
