@@ -1,0 +1,15 @@
+{
+  "name": "web-player",
+  "version": "1.0.0",
+  "description": "极简儿童视频播放器：文件夹即节目",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0"
+  }
+}

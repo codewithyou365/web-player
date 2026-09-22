@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>动画片</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>🎬 动画片</h1>
+  <a class="icon-btn" href="/settings.html" title="设置">⚙️</a>
+</header>
+<main id="grid" class="grid"></main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function load() {
+  const grid = document.getElementById('grid');
+  const { shows } = await fetch('/api/shows').then((r) => r.json());
+  if (!shows.length) {
+    grid.innerHTML = '<div class="empty">还没有节目。<br>正在扫描，或者到 <a href="/settings.html">设置</a> 添加目录。</div>';
+    setTimeout(load, 3000);
+    return;
+  }
+  grid.innerHTML = shows.map((s) => `
+    <a class="card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）">
+      ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
+      <div class="info">${esc(s.relPath)}<br>共 ${s.count} 集</div>
+      <div class="name">${esc(s.name)}</div>
+    </a>`).join('');
+}
+load();
+</script>
+</body>
+</html>

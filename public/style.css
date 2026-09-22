@@ -1,0 +1,124 @@
+:root {
+  --bg: #fdf6e3;
+  --card: #ffffff;
+  --text: #333;
+  --muted: #888;
+  --accent: #ff7a59;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+}
+a { color: inherit; text-decoration: none; }
+header {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 20px;
+  background: rgba(253, 246, 227, 0.95);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #eee2c6;
+}
+header h1 { margin: 0; font-size: 22px; flex: 1; }
+.icon-btn {
+  font-size: 22px; padding: 6px 10px; border-radius: 10px;
+  background: transparent; border: none; cursor: pointer;
+}
+.icon-btn:hover { background: rgba(0,0,0,0.06); }
+
+/* 首页网格 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 22px;
+  padding: 22px;
+}
+.card {
+  position: relative;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.card:hover, .card:focus { transform: scale(1.04); outline: none; }
+.card .cover {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block;
+  background: #eee;
+}
+.card .cover.placeholder {
+  display: flex; align-items: center; justify-content: center; font-size: 48px;
+}
+.card .name {
+  padding: 10px 12px;
+  font-size: 17px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card .info {
+  position: absolute; left: 0; right: 0; top: 0;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.72); color: #fff;
+  font-size: 13px; line-height: 1.5;
+  opacity: 0; transition: opacity .15s; pointer-events: none;
+  word-break: break-all;
+}
+.card:hover .info { opacity: 1; }
+.empty { padding: 60px; text-align: center; color: var(--muted); }
+
+/* 播放页 */
+.player-layout { display: flex; gap: 0; height: calc(100vh - 55px); }
+.player-main { flex: 1; display: flex; flex-direction: column; background: #000; }
+video { width: 100%; height: 100%; flex: 1; background: #000; object-fit: contain; min-height: 200px; }
+.controls {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  background: #1a1a1a; color: #ddd; flex-wrap: wrap;
+}
+.controls button {
+  font-size: 16px; padding: 8px 14px; border-radius: 10px; border: none;
+  background: #333; color: #fff; cursor: pointer;
+}
+.controls button.active { background: var(--accent); }
+.controls .now { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.episodes {
+  width: 300px; overflow-y: auto; background: #fff; border-left: 1px solid #eee;
+}
+.episodes h2 { font-size: 15px; margin: 0; padding: 12px 14px; color: var(--muted); border-bottom: 1px solid #eee; }
+.episodes .ep {
+  padding: 12px 14px; border-bottom: 1px solid #f2f2f2; cursor: pointer; font-size: 15px;
+  display: flex; gap: 8px;
+}
+.episodes .ep:hover { background: #fff5ee; }
+.episodes .ep.current { background: #ffe8dd; font-weight: 600; }
+.episodes .ep .n { color: var(--muted); min-width: 28px; }
+.episodes .ep .t { flex: 1; word-break: break-all; }
+.episodes .ep .d { color: var(--muted); font-size: 13px; }
+@media (max-width: 800px) {
+  .player-layout { flex-direction: column; height: auto; }
+  video { height: 56vw; }
+  .episodes { width: auto; border-left: none; border-top: 1px solid #eee; max-height: 50vh; }
+}
+
+/* 设置页 */
+.settings { max-width: 720px; margin: 0 auto; padding: 24px; }
+.settings h2 { font-size: 18px; }
+.dirs { list-style: none; padding: 0; margin: 0 0 12px; }
+.dirs li { display: flex; gap: 8px; margin-bottom: 8px; }
+.dirs input, .add-row input {
+  flex: 1; font-size: 15px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px;
+}
+.add-row { display: flex; gap: 8px; margin-bottom: 20px; }
+.btn {
+  font-size: 15px; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
+  background: #ddd; color: #333;
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.btn:disabled { opacity: .5; cursor: default; }
+.status { margin-top: 16px; color: var(--muted); }
+.progress { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }

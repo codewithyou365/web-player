@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="icon-btn" href="/" title="返回">🏠</a>
+  <h1>设置</h1>
+</header>
+<main class="settings">
+  <h2>扫描目录</h2>
+  <p style="color:#888;font-size:14px">每个直接包含视频的文件夹会成为一个节目，文件夹名就是节目名。</p>
+  <ul id="dirs" class="dirs"></ul>
+  <div class="add-row">
+    <input id="newDir" placeholder="输入目录的完整路径，如 /Volumes/SANSUNG/kids-videos">
+    <button class="btn" id="add">添加</button>
+  </div>
+  <button class="btn primary" id="save">保存</button>
+  <button class="btn" id="scan">重新扫描</button>
+  <div class="status" id="status"></div>
+  <div class="progress"><div id="bar"></div></div>
+</main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let dirs = [];
+
+function render() {
+  document.getElementById('dirs').innerHTML = dirs.map((d, i) => `
+    <li><input value="${esc(d)}" data-i="${i}"><button class="btn" data-del="${i}">删除</button></li>`).join('')
+    || '<li style="color:#888">还没有目录</li>';
+}
+document.getElementById('dirs').addEventListener('input', (e) => {
+  if (e.target.dataset.i !== undefined) dirs[Number(e.target.dataset.i)] = e.target.value;
+});
+document.getElementById('dirs').addEventListener('click', (e) => {
+  if (e.target.dataset.del !== undefined) { dirs.splice(Number(e.target.dataset.del), 1); render(); }
+});
+document.getElementById('add').onclick = () => {
+  const v = document.getElementById('newDir').value.trim();
+  if (v) { dirs.push(v); document.getElementById('newDir').value = ''; render(); }
+};
+document.getElementById('save').onclick = async () => {
+  const cfg = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scanDirs: dirs }) }).then((r) => r.json());
+  dirs = cfg.scanDirs; render();
+  document.getElementById('status').textContent = '已保存。修改目录后请点「重新扫描」。';
+};
+document.getElementById('scan').onclick = async () => {
+  await fetch('/api/scan', { method: 'POST' });
+  poll();
+};
+async function poll() {
+  const st = await fetch('/api/scan/status').then((r) => r.json());
+  const status = document.getElementById('status');
+  const bar = document.getElementById('bar');
+  document.getElementById('scan').disabled = st.running;
+  if (st.running) {
+    status.textContent = st.phase === 'collect' ? '正在查找视频目录…' : `正在处理 ${st.done} / ${st.total} 个节目（截取封面）…`;
+    bar.style.width = st.total ? (st.done / st.total * 100) + '%' : '0';
+    setTimeout(poll, 1000);
+  } else if (st.phase === 'done') {
+    status.textContent = `扫描完成，共 ${st.done} 个节目。`;
+    bar.style.width = '100%';
+  } else if (st.phase === 'error') {
+    status.textContent = '扫描出错：' + st.error;
+  } else {
+    status.textContent = '';
+  }
+}
+fetch('/api/config').then((r) => r.json()).then((cfg) => { dirs = cfg.scanDirs; render(); });
+poll();
+</script>
+</body>
+</html>

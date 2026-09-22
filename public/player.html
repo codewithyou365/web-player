@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>播放</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="icon-btn" href="/" title="返回">🏠</a>
+  <h1 id="title"></h1>
+</header>
+<div class="player-layout">
+  <div class="player-main">
+    <video id="video" controls autoplay playsinline></video>
+    <div class="controls">
+      <button id="prev">⏮ 上一集</button>
+      <button id="next">下一集 ⏭</button>
+      <span class="now" id="now"></span>
+      <button id="modeSeq" title="播完自动播下一集">🔁 顺序连播</button>
+      <button id="modeOne" title="只播这一集">1️⃣ 单集播放</button>
+    </div>
+  </div>
+  <aside class="episodes">
+    <h2 id="epHead">剧集</h2>
+    <div id="list"></div>
+  </aside>
+</div>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (sec) => { sec = Math.round(sec || 0); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
+
+const id = new URLSearchParams(location.search).get('id');
+const video = document.getElementById('video');
+let show, cur = 0;
+let mode = localStorage.getItem('playMode') || 'seq';
+
+function renderMode() {
+  document.getElementById('modeSeq').classList.toggle('active', mode === 'seq');
+  document.getElementById('modeOne').classList.toggle('active', mode === 'one');
+}
+function setMode(m) { mode = m; localStorage.setItem('playMode', m); renderMode(); }
+
+function play(i) {
+  if (i < 0 || i >= show.episodes.length) return;
+  cur = i;
+  const ep = show.episodes[i];
+  video.src = `/stream/${show.id}/${i}`;
+  video.play().catch(() => {});
+  document.getElementById('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${ep.title}`;
+  localStorage.setItem('last:' + show.id, i);
+  document.querySelectorAll('.ep').forEach((el, j) => el.classList.toggle('current', j === i));
+  const el = document.querySelectorAll('.ep')[i];
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+async function init() {
+  show = await fetch('/api/shows/' + id).then((r) => (r.ok ? r.json() : null));
+  if (!show) { document.getElementById('title').textContent = '没找到这个节目'; return; }
+  document.title = show.name;
+  document.getElementById('title').textContent = show.name;
+  document.getElementById('title').title = show.relPath;
+  document.getElementById('epHead').textContent = `剧集（${show.episodes.length}）`;
+  document.getElementById('list').innerHTML = show.episodes.map((e) => `
+    <div class="ep" data-i="${e.index}">
+      <span class="n">${e.index + 1}</span>
+      <span class="t">${esc(e.title)}</span>
+      <span class="d">${e.duration ? fmt(e.duration) : ''}</span>
+    </div>`).join('');
+  document.getElementById('list').addEventListener('click', (ev) => {
+    const el = ev.target.closest('.ep');
+    if (el) play(Number(el.dataset.i));
+  });
+  renderMode();
+  const last = Number(localStorage.getItem('last:' + show.id));
+  play(Number.isInteger(last) && last < show.episodes.length ? last : 0);
+}
+
+document.getElementById('prev').onclick = () => play(cur - 1);
+document.getElementById('next').onclick = () => play(cur + 1);
+document.getElementById('modeSeq').onclick = () => setMode('seq');
+document.getElementById('modeOne').onclick = () => setMode('one');
+video.addEventListener('ended', () => {
+  if (mode !== 'seq') return;
+  if (cur + 1 < show.episodes.length) play(cur + 1);
+  else location.href = '/';
+});
+video.addEventListener('error', () => {
+  document.getElementById('now').textContent += '（播放失败）';
+});
+init();
+</script>
+</body>
+</html>
