@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>播放</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/admin.js"></script>
 </head>
 <body>
 <header>
@@ -30,6 +31,7 @@
       <button id="modeSeq" title="播完自动播下一集">🔁 顺序连播</button>
       <button id="modeOne" title="只播这一集">1️⃣ 单集播放</button>
       <button id="fullBtn" title="全屏">⛶</button>
+      <button id="delShow" class="danger" title="从硬盘彻底删除整个节目" hidden>🗑 删除节目</button>
     </div>
   </div>
   <aside class="episodes">
@@ -99,23 +101,51 @@ function updateBar() {
   seek.value = duration ? Math.round(t / duration * 1000) : 0;
 }
 
+function renderList() {
+  const admin = Admin.on();
+  $('epHead').textContent = `剧集（${show.episodes.length}）`;
+  $('list').innerHTML = show.episodes.map((e) => `
+    <div class="ep${e.index === cur ? ' current' : ''}" data-i="${e.index}">
+      <span class="n">${e.index + 1}</span>
+      <span class="t">${esc(e.title)}</span>
+      <span class="d">${e.duration ? fmt(e.duration) : ''}</span>
+      ${admin ? `<button class="del-ep" data-i="${e.index}" title="彻底删除这一集">🗑</button>` : ''}
+    </div>`).join('');
+}
+
 async function init() {
   show = await fetch('/api/shows/' + id).then((r) => (r.ok ? r.json() : null));
   if (!show) { $('title').textContent = '没找到这个节目'; return; }
   document.title = show.name;
   $('title').textContent = show.name;
   $('title').title = show.relPath;
-  $('epHead').textContent = `剧集（${show.episodes.length}）`;
-  $('list').innerHTML = show.episodes.map((e) => `
-    <div class="ep" data-i="${e.index}">
-      <span class="n">${e.index + 1}</span>
-      <span class="t">${esc(e.title)}</span>
-      <span class="d">${e.duration ? fmt(e.duration) : ''}</span>
-    </div>`).join('');
-  $('list').addEventListener('click', (ev) => {
+  renderList();
+  $('list').addEventListener('click', async (ev) => {
+    const del = ev.target.closest('.del-ep');
+    if (del) {
+      ev.stopPropagation();
+      const e = show.episodes[Number(del.dataset.i)];
+      const r = await Admin.deleteEpisode(show, e);
+      if (!r) return;
+      if (!r.show) { location.href = '/'; return; }
+      const wasCur = e.index === cur;
+      show = r.show;
+      if (wasCur) {
+        load(Math.min(cur, show.episodes.length - 1));   // 删的是正在播的：播同位置的下一集
+      } else {
+        if (e.index < cur) cur--;                          // 删的在前面：当前集序号前移
+        $('now').textContent = `第 ${cur + 1} / ${show.episodes.length} 集：${ep().title}`;
+      }
+      renderList();
+      return;
+    }
     const el = ev.target.closest('.ep');
     if (el) load(Number(el.dataset.i));
   });
+  if (Admin.on()) {
+    $('delShow').hidden = false;
+    $('delShow').onclick = async () => { if (await Admin.deleteShow(show)) location.href = '/'; };
+  }
   renderMode();
   // 从服务端读取上次进度：接着上次的集数和时间点播放；快播完的就从下一集开头开始
   const pr = await fetch('/api/progress/' + show.id).then((r) => r.json()).catch(() => null);

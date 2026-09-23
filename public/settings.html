@@ -12,6 +12,12 @@
   <h1>设置</h1>
 </header>
 <main class="settings">
+  <h2>管理模式</h2>
+  <label class="switch-row">
+    <input type="checkbox" id="adminMode">
+    <span>开启后，首页和播放页会显示 🗑 删除按钮，可以把视频<b>从硬盘上彻底删除</b>（不可恢复）。只对本设备的浏览器生效，给孩子用的设备请关掉。</span>
+  </label>
+
   <h2>扫描目录</h2>
   <p style="color:#888;font-size:14px">每个直接包含视频的文件夹会成为一个节目，文件夹名就是节目名。</p>
   <ul id="dirs" class="dirs"></ul>
@@ -24,7 +30,10 @@
   <div class="status" id="status"></div>
   <div class="progress"><div id="bar"></div></div>
 </main>
+<script src="/admin.js"></script>
 <script>
+document.getElementById('adminMode').checked = Admin.on();
+document.getElementById('adminMode').onchange = (e) => Admin.set(e.target.checked);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let dirs = [];
 

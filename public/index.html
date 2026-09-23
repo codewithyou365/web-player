@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>动画片</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/admin.js"></script>
 </head>
 <body>
 <header>
@@ -47,12 +48,23 @@ async function load() {
     setTimeout(load, 3000);
     return;
   }
+  const admin = Admin.on();
   grid.innerHTML = shows.map((s) => `
-    <a class="card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）">
+    <a class="card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）" data-id="${s.id}">
+      ${admin ? `<button class="del-btn" data-del="${s.id}" title="彻底删除这个节目">🗑</button>` : ''}
       ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
       <div class="info">${esc(s.relPath)}<br>共 ${s.count} 集</div>
       <div class="name">${esc(s.name)}</div>
     </a>`).join('');
+  if (admin) {
+    grid.onclick = async (ev) => {
+      const btn = ev.target.closest('[data-del]');
+      if (!btn) return;
+      ev.preventDefault();
+      const s = shows.find((x) => x.id === btn.dataset.del);
+      if (s && (await Admin.deleteShow(s))) load();
+    };
+  }
 }
 load();
 </script>

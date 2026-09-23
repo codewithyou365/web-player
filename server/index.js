@@ -6,6 +6,7 @@ const os = require('os');
 const lib = require('./library');
 const media = require('./media');
 const scanner = require('./scanner');
+const deleter = require('./deleter');
 
 const app = express();
 app.use(express.json());
@@ -34,6 +35,27 @@ app.get('/api/shows/:id', (req, res) => {
   const s = findShow(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
   res.json(publicShow(s, true));
+});
+
+// 彻底删除（直接删硬盘文件，不可恢复）
+app.delete('/api/shows/:id', (req, res) => {
+  try {
+    const r = deleter.deleteShow(req.params.id);
+    console.log('[delete] 节目', req.params.id, '删除', r.removed.length, '个文件', r.errors.length ? r.errors : '');
+    res.json(r);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/shows/:id/episodes/:index', (req, res) => {
+  try {
+    const r = deleter.deleteEpisode(req.params.id, Number(req.params.index));
+    console.log('[delete] 单集', r.removed[0]);
+    res.json({ removed: r.removed, show: r.show ? publicShow(r.show, true) : null });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // 播放进度（服务端保存，所有设备共用）
