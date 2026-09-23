@@ -147,6 +147,23 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; background: #00
 .modal-list { max-height: 200px; overflow-y: auto; margin: 0 0 12px; padding-left: 20px; font-size: 14px; color: #555; word-break: break-all; }
 .modal-input { width: 100%; font-size: 16px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 14px; }
 .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-hint { color: #666; font-size: 14px; margin: 0 0 10px; }
+.choice-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-height: 260px; overflow-y: auto; }
+.choice { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e5e5; border-radius: 10px; cursor: pointer; }
+.choice:hover { background: #fff5ee; }
+.choice.disabled { opacity: .5; cursor: default; }
+.choice-label { font-weight: 600; }
+.choice-note { color: #999; font-size: 12px; margin-left: auto; word-break: break-all; text-align: right; }
+
+/* 归档文件夹 */
+.folder-card .name { color: #7a5a1e; }
+.folder-card .cover { filter: saturate(.85); }
+.del-btn.archive { right: 48px; background: rgba(60, 120, 200, 0.85); }
+.del-btn.archive:hover { background: #3c78c8; }
+.del-btn.unarchive { background: rgba(60, 120, 200, 0.85); }
+.del-btn.unarchive:hover { background: #3c78c8; }
+header h1 a { color: var(--accent); }
+header h1 .sep { color: #bbb; margin: 0 8px; font-weight: normal; }
 .switch-row { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; font-size: 15px; }
 .switch-row input { width: 22px; height: 22px; }
 

@@ -7,6 +7,7 @@ const lib = require('./library');
 const media = require('./media');
 const scanner = require('./scanner');
 const deleter = require('./deleter');
+const folders = require('./folders');
 
 const app = express();
 app.use(express.json());
@@ -35,6 +36,35 @@ app.get('/api/shows/:id', (req, res) => {
   const s = findShow(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
   res.json(publicShow(s, true));
+});
+
+// 归档：把某个上级目录折叠成一张文件夹卡片
+app.get('/api/browse', (req, res) => {
+  const r = folders.browse(req.query.folder || null, publicShow);
+  if (!r) return res.status(404).json({ error: 'folder not found' });
+  res.json(r);
+});
+
+app.get('/api/shows/:id/ancestors', (req, res) => {
+  const s = findShow(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  const archived = new Set(folders.loadFolders().map((f) => f.id));
+  res.json(folders.ancestorsOf(s).map((a) => ({ ...a, archived: archived.has(a.id) })));
+});
+
+app.post('/api/folders', (req, res) => {
+  const s = findShow(req.body.showId);
+  if (!s) return res.status(404).json({ error: 'show not found' });
+  const target = folders.ancestorsOf(s).find((a) => a.id === req.body.ancestorId);
+  if (!target) return res.status(400).json({ error: '只能归档到该节目的上级目录' });
+  console.log('[archive] 归档目录', target.dir);
+  res.json(folders.addFolder(target.dir));
+});
+
+app.delete('/api/folders/:id', (req, res) => {
+  const ok = folders.removeFolder(req.params.id);
+  console.log('[archive] 取消归档', req.params.id, ok);
+  res.json({ ok });
 });
 
 // 彻底删除（直接删硬盘文件，不可恢复）

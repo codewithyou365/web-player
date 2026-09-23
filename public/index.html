@@ -9,7 +9,8 @@
 </head>
 <body>
 <header>
-  <h1>🎬 动画片</h1>
+  <a class="icon-btn" href="/" id="homeBtn" title="首页" hidden>🏠</a>
+  <h1 id="crumbs">🎬 动画片</h1>
   <a class="icon-btn" href="/settings.html" title="设置">⚙️</a>
 </header>
 <section id="recent" class="recent" hidden>
@@ -21,6 +22,7 @@
 <script>
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
+const folderId = new URLSearchParams(location.search).get('folder') || '';
 
 async function loadRecent() {
   const items = await fetch('/api/recent').then((r) => r.json());
@@ -39,30 +41,67 @@ async function loadRecent() {
   }).join('');
 }
 
+function coverHtml(s) {
+  return s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">${s.type === 'folder' ? '📁' : '🎞️'}</div>`;
+}
+
+function renderHeader(data) {
+  const home = document.getElementById('homeBtn');
+  const h = document.getElementById('crumbs');
+  if (!data.folder) { home.hidden = true; h.innerHTML = '🎬 动画片'; document.title = '动画片'; return; }
+  home.hidden = false;
+  const parts = [`<a href="/">全部</a>`, ...data.crumbs.map((c) => `<a href="/?folder=${c.id}">${esc(c.name)}</a>`), `<span>📁 ${esc(data.folder.name)}</span>`];
+  h.innerHTML = parts.join('<span class="sep">›</span>');
+  document.title = data.folder.name;
+}
+
 async function load() {
-  loadRecent();
+  if (!folderId) loadRecent();
   const grid = document.getElementById('grid');
-  const { shows } = await fetch('/api/shows').then((r) => r.json());
-  if (!shows.length) {
-    grid.innerHTML = '<div class="empty">还没有节目。<br>正在扫描，或者到 <a href="/settings.html">设置</a> 添加目录。</div>';
-    setTimeout(load, 3000);
+  const res = await fetch('/api/browse' + (folderId ? '?folder=' + folderId : ''));
+  if (!res.ok) { location.href = '/'; return; }
+  const data = await res.json();
+  renderHeader(data);
+  const admin = Admin.on();
+  const items = [...data.folders, ...data.shows];
+  if (!items.length) {
+    grid.innerHTML = folderId
+      ? '<div class="empty">这个文件夹是空的。</div>'
+      : '<div class="empty">还没有节目。<br>正在扫描，或者到 <a href="/settings.html">设置</a> 添加目录。</div>';
+    if (!folderId) setTimeout(load, 3000);
     return;
   }
-  const admin = Admin.on();
-  grid.innerHTML = shows.map((s) => `
+  grid.innerHTML = items.map((s) => s.type === 'folder' ? `
+    <a class="card folder-card" href="/?folder=${s.id}" title="${esc(s.relPath)}（${s.count} 个节目）" data-id="${s.id}">
+      ${admin ? `<button class="del-btn unarchive" data-unarchive="${s.id}" title="取消归档：把里面的节目放回上一层">📂</button>` : ''}
+      ${coverHtml(s)}
+      <div class="info">${esc(s.relPath)}<br>${s.count} 个节目</div>
+      <div class="name">📁 ${esc(s.name)}</div>
+    </a>` : `
     <a class="card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）" data-id="${s.id}">
-      ${admin ? `<button class="del-btn" data-del="${s.id}" title="彻底删除这个节目">🗑</button>` : ''}
-      ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
+      ${admin ? `<button class="del-btn archive" data-archive="${s.id}" title="归档到上级目录">🗂</button><button class="del-btn" data-del="${s.id}" title="彻底删除这个节目">🗑</button>` : ''}
+      ${coverHtml(s)}
       <div class="info">${esc(s.relPath)}<br>共 ${s.count} 集</div>
       <div class="name">${esc(s.name)}</div>
     </a>`).join('');
+
   if (admin) {
     grid.onclick = async (ev) => {
-      const btn = ev.target.closest('[data-del]');
-      if (!btn) return;
+      const del = ev.target.closest('[data-del]');
+      const arc = ev.target.closest('[data-archive]');
+      const un = ev.target.closest('[data-unarchive]');
+      if (!del && !arc && !un) return;
       ev.preventDefault();
-      const s = shows.find((x) => x.id === btn.dataset.del);
-      if (s && (await Admin.deleteShow(s))) load();
+      if (del) {
+        const s = data.shows.find((x) => x.id === del.dataset.del);
+        if (s && (await Admin.deleteShow(s))) load();
+      } else if (arc) {
+        const s = data.shows.find((x) => x.id === arc.dataset.archive);
+        if (s && (await Admin.archiveShow(s))) load();
+      } else if (un) {
+        const f = data.folders.find((x) => x.id === un.dataset.unarchive);
+        if (f && (await Admin.unarchive(f))) load();
+      }
     };
   }
 }
