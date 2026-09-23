@@ -36,6 +36,49 @@ app.get('/api/shows/:id', (req, res) => {
   res.json(publicShow(s, true));
 });
 
+// 播放进度（服务端保存，所有设备共用）
+app.get('/api/progress', (req, res) => res.json(lib.loadProgress()));
+
+app.get('/api/progress/:id', (req, res) => res.json(lib.loadProgress()[req.params.id] || null));
+
+// PUT 是正常保存；POST 给 sendBeacon 用（离开页面时只能发 POST）
+app.put('/api/progress/:id', saveProgressHandler);
+app.post('/api/progress/:id', saveProgressHandler);
+function saveProgressHandler(req, res) {
+  const s = findShow(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  const index = Math.max(0, Math.min(Number(req.body.index) || 0, s.episodes.length - 1));
+  const time = Math.max(0, Number(req.body.time) || 0);
+  const p = lib.loadProgress();
+  p[s.id] = { index, time, updatedAt: Date.now() };
+  lib.saveProgress(p);
+  res.json(p[s.id]);
+}
+
+app.delete('/api/progress/:id', (req, res) => {
+  const p = lib.loadProgress();
+  delete p[req.params.id];
+  lib.saveProgress(p);
+  res.json({ ok: true });
+});
+
+// 最近播放：按最后播放时间倒序，附带节目信息
+app.get('/api/recent', (req, res) => {
+  const l = lib.loadLibrary();
+  const p = lib.loadProgress();
+  const shows = new Map(((l && l.shows) || []).map((s) => [s.id, s]));
+  const items = Object.entries(p)
+    .filter(([id]) => shows.has(id))
+    .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+    .slice(0, 12)
+    .map(([id, pr]) => {
+      const s = shows.get(id);
+      const ep = s.episodes[pr.index] || s.episodes[0];
+      return { ...publicShow(s, false), index: pr.index, time: pr.time, duration: ep ? ep.duration : 0, epTitle: ep ? ep.title : '', updatedAt: pr.updatedAt };
+    });
+  res.json(items);
+});
+
 app.get('/api/config', (req, res) => res.json(lib.loadConfig()));
 
 app.put('/api/config', (req, res) => {

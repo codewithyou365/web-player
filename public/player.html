@@ -75,7 +75,7 @@ function load(i, startAt = 0) {
   video.play().catch(() => {});
   $('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${e.title}`;
   $('tDur').textContent = fmt(duration);
-  localStorage.setItem('last:' + show.id, i);
+  saveProgress(true);
   document.querySelectorAll('.ep').forEach((el, j) => el.classList.toggle('current', j === i));
   const el = document.querySelectorAll('.ep')[i];
   if (el) el.scrollIntoView({ block: 'nearest' });
@@ -117,9 +117,37 @@ async function init() {
     if (el) load(Number(el.dataset.i));
   });
   renderMode();
-  const last = Number(localStorage.getItem('last:' + show.id));
-  load(Number.isInteger(last) && last < show.episodes.length ? last : 0);
+  // 从服务端读取上次进度：接着上次的集数和时间点播放；快播完的就从下一集开头开始
+  const pr = await fetch('/api/progress/' + show.id).then((r) => r.json()).catch(() => null);
+  if (pr && pr.index < show.episodes.length) {
+    const d = show.episodes[pr.index].duration || 0;
+    if (d && pr.time > d - 15) {
+      if (pr.index + 1 < show.episodes.length) load(pr.index + 1); else load(0);
+    } else {
+      load(pr.index, pr.time > 3 ? pr.time : 0);
+    }
+  } else {
+    load(0);
+  }
 }
+
+// 进度保存：播放中每 5 秒一次，暂停/切集/离开页面时立即保存
+let lastSaved = 0;
+function saveProgress(force, beacon) {
+  if (!show || !ep()) return;
+  const now = Date.now();
+  if (!force && now - lastSaved < 5000) return;
+  lastSaved = now;
+  const body = JSON.stringify({ index: cur, time: Math.floor(nowTime()) });
+  if (beacon && navigator.sendBeacon) {
+    navigator.sendBeacon('/api/progress/' + show.id, new Blob([body], { type: 'application/json' }));
+  } else {
+    fetch('/api/progress/' + show.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+  }
+}
+video.addEventListener('timeupdate', () => { if (!video.paused) saveProgress(false); });
+video.addEventListener('pause', () => saveProgress(true));
+window.addEventListener('pagehide', () => saveProgress(true, true));
 
 // 进度条：拖动时只更新显示，松手才真正跳转
 seek.addEventListener('input', () => { dragging = true; $('tCur').textContent = fmt(seek.value / 1000 * duration); });

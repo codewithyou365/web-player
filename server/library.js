@@ -48,7 +48,20 @@ function saveLibrary(lib) {
   writeJson(LIBRARY_FILE, lib);
 }
 
+const PROGRESS_FILE = path.join(DATA_DIR, 'progress.json');
+
+/** { [showId]: { index, time, updatedAt } } */
+function loadProgress() {
+  return readJson(PROGRESS_FILE, {});
+}
+
+function saveProgress(p) {
+  writeJson(PROGRESS_FILE, p);
+}
+
 module.exports = {
+  loadProgress,
+  saveProgress,
   ROOT,
   DATA_DIR,
   COVERS_DIR,

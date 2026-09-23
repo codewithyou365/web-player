@@ -11,11 +11,35 @@
   <h1>🎬 动画片</h1>
   <a class="icon-btn" href="/settings.html" title="设置">⚙️</a>
 </header>
+<section id="recent" class="recent" hidden>
+  <h2>▶️ 最近播放</h2>
+  <div class="recent-row" id="recentRow"></div>
+</section>
+<h2 class="section-title" id="allTitle" hidden>📚 全部</h2>
 <main id="grid" class="grid"></main>
 <script>
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
+
+async function loadRecent() {
+  const items = await fetch('/api/recent').then((r) => r.json());
+  const sec = document.getElementById('recent');
+  sec.hidden = !items.length;
+  document.getElementById('allTitle').hidden = !items.length;
+  document.getElementById('recentRow').innerHTML = items.map((s) => {
+    const pct = s.duration ? Math.min(100, Math.round(s.time / s.duration * 100)) : 0;
+    return `
+    <a class="card recent-card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}">
+      ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
+      <div class="bar"><div style="width:${pct}%"></div></div>
+      <div class="name">${esc(s.name)}</div>
+      <div class="sub">第 ${s.index + 1} 集 · 看到 ${fmt(s.time)}</div>
+    </a>`;
+  }).join('');
+}
 
 async function load() {
+  loadRecent();
   const grid = document.getElementById('grid');
   const { shows } = await fetch('/api/shows').then((r) => r.json());
   if (!shows.length) {

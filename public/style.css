@@ -71,6 +71,18 @@ header h1 { margin: 0; font-size: 22px; flex: 1; }
 .card:hover .info { opacity: 1; }
 .empty { padding: 60px; text-align: center; color: var(--muted); }
 
+/* 最近播放 */
+.section-title, .recent h2 { font-size: 18px; margin: 18px 22px 0; }
+.recent-row {
+  display: flex; gap: 16px; padding: 14px 22px 6px; overflow-x: auto;
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+}
+.recent-card { flex: 0 0 200px; scroll-snap-align: start; }
+.recent-card .bar { height: 5px; background: #eee; }
+.recent-card .bar > div { height: 100%; background: var(--accent); }
+.recent-card .sub { padding: 0 12px 10px; font-size: 13px; color: var(--muted); }
+.recent-card .name { padding-bottom: 4px; font-size: 15px; }
+
 /* 播放页 */
 .player-layout { display: flex; gap: 0; height: calc(100vh - 55px); }
 .player-main { flex: 1; display: flex; flex-direction: column; background: #000; }
