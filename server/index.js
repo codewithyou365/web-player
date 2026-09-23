@@ -59,7 +59,9 @@ app.get('/stream/:id/:index', async (req, res) => {
   const ep = s && s.episodes[Number(req.params.index)];
   if (!ep || !fs.existsSync(ep.path)) return res.status(404).end();
   if (ep.native) return res.sendFile(ep.path);
-  await media.streamTranscoded(ep.path, ep, res);
+  // 转码流不支持 Range，用 ?t=秒 指定起点实现拖动
+  const t = Math.max(0, Math.min(Number(req.query.t) || 0, Math.max(0, (ep.duration || 0) - 1)));
+  await media.streamTranscoded(ep.path, ep, res, t);
 });
 
 const cfg = lib.loadConfig();

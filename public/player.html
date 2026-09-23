@@ -12,14 +12,24 @@
   <h1 id="title"></h1>
 </header>
 <div class="player-layout">
-  <div class="player-main">
-    <video id="video" controls autoplay playsinline></video>
+  <div class="player-main" id="stage">
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" autoplay playsinline></video>
+      <div class="big-play" id="bigPlay" hidden>▶</div>
+    </div>
+    <div class="seekbar">
+      <span class="time" id="tCur">0:00</span>
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+      <span class="time" id="tDur">0:00</span>
+    </div>
     <div class="controls">
+      <button id="playBtn" title="播放/暂停">⏸</button>
       <button id="prev">⏮ 上一集</button>
       <button id="next">下一集 ⏭</button>
       <span class="now" id="now"></span>
       <button id="modeSeq" title="播完自动播下一集">🔁 顺序连播</button>
       <button id="modeOne" title="只播这一集">1️⃣ 单集播放</button>
+      <button id="fullBtn" title="全屏">⛶</button>
     </div>
   </div>
   <aside class="episodes">
@@ -29,65 +39,129 @@
 </div>
 <script>
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const fmt = (sec) => { sec = Math.round(sec || 0); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
+const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
 
 const id = new URLSearchParams(location.search).get('id');
 const video = document.getElementById('video');
+const seek = document.getElementById('seek');
+const $ = (i) => document.getElementById(i);
 let show, cur = 0;
 let mode = localStorage.getItem('playMode') || 'seq';
+// 转码流的时间戳从 0 开始，offset 记录这段流真正的起点秒数
+let offset = 0, duration = 0, dragging = false;
+
+function ep() { return show.episodes[cur]; }
+function nowTime() { return offset + (video.currentTime || 0); }
 
 function renderMode() {
-  document.getElementById('modeSeq').classList.toggle('active', mode === 'seq');
-  document.getElementById('modeOne').classList.toggle('active', mode === 'one');
+  $('modeSeq').classList.toggle('active', mode === 'seq');
+  $('modeOne').classList.toggle('active', mode === 'one');
 }
 function setMode(m) { mode = m; localStorage.setItem('playMode', m); renderMode(); }
 
-function play(i) {
+function load(i, startAt = 0) {
   if (i < 0 || i >= show.episodes.length) return;
   cur = i;
-  const ep = show.episodes[i];
-  video.src = `/stream/${show.id}/${i}`;
+  const e = ep();
+  duration = e.duration || 0;
+  if (e.native) {
+    offset = 0;
+    video.src = `/stream/${show.id}/${i}`;
+    if (startAt > 0) video.currentTime = startAt;
+  } else {
+    offset = startAt;
+    video.src = `/stream/${show.id}/${i}` + (startAt > 0 ? `?t=${Math.floor(startAt)}` : '');
+  }
   video.play().catch(() => {});
-  document.getElementById('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${ep.title}`;
+  $('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${e.title}`;
+  $('tDur').textContent = fmt(duration);
   localStorage.setItem('last:' + show.id, i);
   document.querySelectorAll('.ep').forEach((el, j) => el.classList.toggle('current', j === i));
   const el = document.querySelectorAll('.ep')[i];
   if (el) el.scrollIntoView({ block: 'nearest' });
+  updateBar();
+}
+
+function seekTo(t) {
+  t = Math.max(0, Math.min(t, duration - 0.5));
+  if (ep().native) {
+    video.currentTime = t;
+    video.play().catch(() => {});
+  } else {
+    load(cur, t);
+  }
+}
+
+function updateBar() {
+  if (dragging) return;
+  const t = nowTime();
+  $('tCur').textContent = fmt(t);
+  seek.value = duration ? Math.round(t / duration * 1000) : 0;
 }
 
 async function init() {
   show = await fetch('/api/shows/' + id).then((r) => (r.ok ? r.json() : null));
-  if (!show) { document.getElementById('title').textContent = '没找到这个节目'; return; }
+  if (!show) { $('title').textContent = '没找到这个节目'; return; }
   document.title = show.name;
-  document.getElementById('title').textContent = show.name;
-  document.getElementById('title').title = show.relPath;
-  document.getElementById('epHead').textContent = `剧集（${show.episodes.length}）`;
-  document.getElementById('list').innerHTML = show.episodes.map((e) => `
+  $('title').textContent = show.name;
+  $('title').title = show.relPath;
+  $('epHead').textContent = `剧集（${show.episodes.length}）`;
+  $('list').innerHTML = show.episodes.map((e) => `
     <div class="ep" data-i="${e.index}">
       <span class="n">${e.index + 1}</span>
       <span class="t">${esc(e.title)}</span>
       <span class="d">${e.duration ? fmt(e.duration) : ''}</span>
     </div>`).join('');
-  document.getElementById('list').addEventListener('click', (ev) => {
+  $('list').addEventListener('click', (ev) => {
     const el = ev.target.closest('.ep');
-    if (el) play(Number(el.dataset.i));
+    if (el) load(Number(el.dataset.i));
   });
   renderMode();
   const last = Number(localStorage.getItem('last:' + show.id));
-  play(Number.isInteger(last) && last < show.episodes.length ? last : 0);
+  load(Number.isInteger(last) && last < show.episodes.length ? last : 0);
 }
 
-document.getElementById('prev').onclick = () => play(cur - 1);
-document.getElementById('next').onclick = () => play(cur + 1);
-document.getElementById('modeSeq').onclick = () => setMode('seq');
-document.getElementById('modeOne').onclick = () => setMode('one');
+// 进度条：拖动时只更新显示，松手才真正跳转
+seek.addEventListener('input', () => { dragging = true; $('tCur').textContent = fmt(seek.value / 1000 * duration); });
+seek.addEventListener('change', () => { dragging = false; seekTo(seek.value / 1000 * duration); });
+video.addEventListener('timeupdate', updateBar);
+video.addEventListener('durationchange', () => {
+  // 原生 mp4 以浏览器读到的时长为准
+  if (ep() && ep().native && isFinite(video.duration) && video.duration > 0) { duration = video.duration; $('tDur').textContent = fmt(duration); }
+});
+
+// 播放/暂停
+function togglePlay() { if (video.paused) video.play().catch(() => {}); else video.pause(); }
+$('playBtn').onclick = togglePlay;
+video.addEventListener('click', togglePlay);
+$('bigPlay').onclick = togglePlay;
+video.addEventListener('play', () => { $('playBtn').textContent = '⏸'; $('bigPlay').hidden = true; });
+video.addEventListener('pause', () => { $('playBtn').textContent = '▶'; $('bigPlay').hidden = false; });
+
+$('prev').onclick = () => load(cur - 1);
+$('next').onclick = () => load(cur + 1);
+$('modeSeq').onclick = () => setMode('seq');
+$('modeOne').onclick = () => setMode('one');
+$('fullBtn').onclick = () => {
+  const el = $('stage');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (el.requestFullscreen) el.requestFullscreen();
+  else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
+};
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'ArrowRight') seekTo(nowTime() + 10);
+  else if (e.code === 'ArrowLeft') seekTo(nowTime() - 10);
+});
+
 video.addEventListener('ended', () => {
   if (mode !== 'seq') return;
-  if (cur + 1 < show.episodes.length) play(cur + 1);
+  if (cur + 1 < show.episodes.length) load(cur + 1);
   else location.href = '/';
 });
 video.addEventListener('error', () => {
-  document.getElementById('now').textContent += '（播放失败）';
+  if (video.src) $('now').textContent += '（播放失败）';
 });
 init();
 </script>

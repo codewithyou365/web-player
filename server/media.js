@@ -120,12 +120,15 @@ function pickEncoder() {
   return encoderPromise;
 }
 
-async function streamTranscoded(file, info, res) {
+async function streamTranscoded(file, info, res, startAt = 0) {
   // TS（如爱奇艺下载的假 mp4）时间戳和 SPS/PPS 不完整，直接 copy 会丢开头几秒甚至无法解码，必须重编码
   const isTs = info && /mpegts/.test(info.format || '');
   const copyVideo = info && info.vcodec === 'h264' && !isTs;
   const copyAudio = info && (info.acodec === 'aac' || info.acodec === 'mp3');
-  const args = ['-v', 'error', '-fflags', '+genpts', '-i', file];
+  const args = ['-v', 'error', '-fflags', '+genpts'];
+  // -ss 放在 -i 前面：按关键帧快速定位，输出时间戳从 0 开始，前端自己加偏移
+  if (startAt > 0) args.push('-ss', String(startAt));
+  args.push('-i', file);
   if (copyVideo) args.push('-c:v', 'copy');
   else args.push(...(await pickEncoder()));
   // TS/FLV 里的 AAC 是 ADTS 封装，复制进 mp4 必须转成 ASC，否则 ffmpeg 直接报错退出
@@ -141,7 +144,7 @@ async function streamTranscoded(file, info, res) {
   res.setHeader('Cache-Control', 'no-store');
   ff.stdout.pipe(res);
   // 坏 TS 文件开头会刷一堆无害的解码警告，过滤掉
-  const NOISE = /non-existing PPS|decode_slice_header|no frame!|Last message repeated|reference picture missing|Missing reference picture/;
+  const NOISE = /non-existing PPS|decode_slice_header|no frame!|Last message repeated|reference picture missing|Missing reference picture|mmco: unref|co located POCs/;
   ff.stderr.on('data', (d) => {
     const line = d.toString().trim();
     if (line && !NOISE.test(line)) console.error('[ffmpeg]', path.basename(file), line);
