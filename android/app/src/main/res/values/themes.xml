@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WebPlayer" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">#fdf6e3</item>
+        <item name="android:statusBarColor">#fdf6e3</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

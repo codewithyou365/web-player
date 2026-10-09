@@ -59,7 +59,20 @@ function saveProgress(p) {
   writeJson(PROGRESS_FILE, p);
 }
 
+const FAVORITES_FILE = path.join(DATA_DIR, 'favorites.json');
+
+/** { [showId]: likedAt } */
+function loadFavorites() {
+  return readJson(FAVORITES_FILE, {});
+}
+
+function saveFavorites(f) {
+  writeJson(FAVORITES_FILE, f);
+}
+
 module.exports = {
+  loadFavorites,
+  saveFavorites,
   loadProgress,
   saveProgress,
   ROOT,

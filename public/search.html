@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="动画片">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>搜索</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/back.js"></script>
+</head>
+<body>
+<header>
+  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
+  <a class="icon-btn" href="/" title="首页">🏠</a>
+  <form class="search-form" id="form">
+    <input id="q" type="search" placeholder="节目名、集名，如：小猪佩奇 泥坑" autocomplete="off" enterkeyhint="search">
+    <button class="btn primary" id="go">搜索</button>
+  </form>
+</header>
+<main class="history" id="list"><div class="empty">输入节目名、集名、目录名或字幕里的台词，多个词用空格隔开，比如「小猪佩奇 泥坑」。</div></main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const list = document.getElementById('list');
+const input = document.getElementById('q');
+const go = document.getElementById('go');
+
+function render(data) {
+  const items = data.results;
+  if (!items.length) { list.innerHTML = '<div class="empty">没有找到，换个词试试（多个词用空格隔开）</div>'; return; }
+  list.innerHTML = items.map((s) => `
+    <a class="hist-item" href="/player.html?id=${s.id}${s.episode != null ? '&ep=' + s.episode : s.pick ? '&pick=1' : ''}" title="${esc(s.relPath)}">
+      <div class="hist-cover">
+        ${s.cover ? `<img src="${s.cover}" alt="" loading="lazy">` : '<div class="placeholder">🎞️</div>'}
+      </div>
+      <div class="hist-text">
+        <div class="hist-name">${s.fav ? '❤️ ' : ''}${esc(s.name)}</div>
+        <div class="hist-sub">${s.episode != null ? `第 ${s.episode + 1} 集 · ${esc(s.epTitle)}` : `共 ${s.count} 集${s.pick ? ' · 点进去自己选一集' : ''}`}</div>
+        <div class="hist-when">${esc(s.reason)}</div>
+      </div>
+    </a>`).join('');
+}
+
+// 还没建过索引：先让用户建一次
+function renderNeedIndex(q) {
+  list.innerHTML = `<div class="empty">搜索前需要先建立一次搜索索引（会读取字幕等文本，可能要几十秒；之后扫描会自动更新）。<br><br>
+    <button class="btn primary" id="buildIdx">建立搜索索引</button></div>`;
+  document.getElementById('buildIdx').onclick = async (ev) => {
+    ev.target.disabled = true;
+    ev.target.textContent = '正在建立…';
+    const res = await fetch('/api/search/index', { method: 'POST' });
+    if (res.ok) run(q);
+    else list.innerHTML = '<div class="empty">建立索引失败：' + esc((await res.json().catch(() => ({}))).error || res.status) + '</div>';
+  };
+}
+
+async function run(q) {
+  go.disabled = true;
+  list.innerHTML = '<div class="empty">🔍 正在找…</div>';
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) list.innerHTML = '<div class="empty">这个版本的服务端不支持搜索</div>';
+    else if (data.needIndex) renderNeedIndex(q);
+    else render(data);
+  } catch {
+    list.innerHTML = '<div class="empty">连不上服务器</div>';
+  }
+  go.disabled = false;
+}
+
+// 搜索词放进地址栏：从播放页返回时直接重新显示这次的结果
+document.getElementById('form').onsubmit = (ev) => {
+  ev.preventDefault();
+  const q = input.value.trim();
+  if (!q) return;
+  input.blur();
+  history.replaceState(null, '', '?q=' + encodeURIComponent(q));
+  run(q);
+};
+
+const q0 = new URLSearchParams(location.search).get('q');
+if (q0) { input.value = q0; run(q0); } else input.focus();
+</script>
+</body>
+</html>

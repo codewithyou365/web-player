@@ -3,14 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="动画片">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <title>播放</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/back.js"></script>
 <script src="/admin.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" title="返回">🏠</a>
+  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
+  <a class="icon-btn" href="/" title="首页">🏠</a>
   <h1 id="title"></h1>
+  <a class="btn" id="parentBtn" title="浏览这个节目所在的上级目录" hidden>📁 上级目录</a>
 </header>
 <div class="player-layout">
   <div class="player-main" id="stage">
@@ -30,6 +36,7 @@
       <span class="now" id="now"></span>
       <button id="modeSeq" title="播完自动播下一集">🔁 顺序连播</button>
       <button id="modeOne" title="只播这一集">1️⃣ 单集播放</button>
+      <button id="favBtn" title="喜欢的节目在首页排最前面">🤍 喜欢</button>
       <button id="fullBtn" title="全屏">⛶</button>
       <button id="delShow" class="danger" title="从硬盘彻底删除整个节目" hidden>🗑 删除节目</button>
     </div>
@@ -61,7 +68,11 @@ function renderMode() {
 }
 function setMode(m) { mode = m; localStorage.setItem('playMode', m); renderMode(); }
 
+const useHls = !!video.canPlayType('application/vnd.apple.mpegurl');
+let hlsRetried = false;
+
 function load(i, startAt = 0) {
+  hlsRetried = false;
   if (i < 0 || i >= show.episodes.length) return;
   cur = i;
   const e = ep();
@@ -71,8 +82,11 @@ function load(i, startAt = 0) {
     video.src = `/stream/${show.id}/${i}`;
     if (startAt > 0) video.currentTime = startAt;
   } else {
-    offset = startAt;
-    video.src = `/stream/${show.id}/${i}` + (startAt > 0 ? `?t=${Math.floor(startAt)}` : '');
+    offset = Math.floor(startAt);
+    // Safari/iPad 播 mp4 必须支持 Range，管道流不行，改走 HLS；其它浏览器继续用管道流
+    video.src = useHls
+      ? `/hls/${show.id}/${i}/${offset}/index.m3u8`
+      : `/stream/${show.id}/${i}` + (offset > 0 ? `?t=${offset}` : '');
   }
   video.play().catch(() => {});
   $('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${e.title}`;
@@ -85,6 +99,7 @@ function load(i, startAt = 0) {
 }
 
 function seekTo(t) {
+  if (!ep()) return;
   t = Math.max(0, Math.min(t, duration - 0.5));
   if (ep().native) {
     video.currentTime = t;
@@ -113,13 +128,29 @@ function renderList() {
     </div>`).join('');
 }
 
+function renderFav() {
+  $('favBtn').textContent = show.fav ? '❤️ 已喜欢' : '🤍 喜欢';
+  $('favBtn').classList.toggle('active', !!show.fav);
+}
+
 async function init() {
   show = await fetch('/api/shows/' + id).then((r) => (r.ok ? r.json() : null));
   if (!show) { $('title').textContent = '没找到这个节目'; return; }
   document.title = show.name;
   $('title').textContent = show.name;
   $('title').title = show.relPath;
+  if (show.parent) {
+    $('parentBtn').href = '/?folder=' + show.parent.id;
+    $('parentBtn').textContent = '📁 ' + show.parent.name;
+    $('parentBtn').hidden = false;
+  }
   renderList();
+  renderFav();
+  $('favBtn').onclick = async () => {
+    const r = await fetch('/api/favorites/' + show.id, { method: show.fav ? 'DELETE' : 'PUT' }).then((x) => x.json());
+    show.fav = r.fav;
+    renderFav();
+  };
   $('list').addEventListener('click', async (ev) => {
     const del = ev.target.closest('.del-ep');
     if (del) {
@@ -134,7 +165,7 @@ async function init() {
         load(Math.min(cur, show.episodes.length - 1));   // 删的是正在播的：播同位置的下一集
       } else {
         if (e.index < cur) cur--;                          // 删的在前面：当前集序号前移
-        $('now').textContent = `第 ${cur + 1} / ${show.episodes.length} 集：${ep().title}`;
+        if (ep()) $('now').textContent = `第 ${cur + 1} / ${show.episodes.length} 集：${ep().title}`;
       }
       renderList();
       return;
@@ -148,8 +179,18 @@ async function init() {
   }
   renderMode();
   // 从服务端读取上次进度：接着上次的集数和时间点播放；快播完的就从下一集开头开始
+  // 搜索结果点进来带 ?ep= 指定集：播这一集（上次正好看到这集就接着看，否则从头）
+  const epParam = new URLSearchParams(location.search).get('ep');
+  const ep = epParam === null ? -1 : Number(epParam);
   const pr = await fetch('/api/progress/' + show.id).then((r) => r.json()).catch(() => null);
-  if (pr && pr.index < show.episodes.length) {
+  if (new URLSearchParams(location.search).has('pick')) {
+    // 搜索命中的是目录里的文本（字幕等）：不自动播，让用户从右边列表自己选。
+    // cur = -1 表示还没选集，这期间不保存进度（否则会把这个节目原来的断点覆盖成第 1 集 0 秒）
+    cur = -1;
+    $('now').textContent = '👉 从右边的列表里选一集';
+  } else if (Number.isInteger(ep) && ep >= 0 && ep < show.episodes.length) {
+    load(ep, pr && pr.index === ep && pr.time > 3 ? pr.time : 0);
+  } else if (pr && pr.index < show.episodes.length) {
     const d = show.episodes[pr.index].duration || 0;
     if (d && pr.time > d - 15) {
       if (pr.index + 1 < show.episodes.length) load(pr.index + 1); else load(0);
@@ -191,7 +232,11 @@ video.addEventListener('durationchange', () => {
 // 播放/暂停
 function togglePlay() { if (video.paused) video.play().catch(() => {}); else video.pause(); }
 $('playBtn').onclick = togglePlay;
-video.addEventListener('click', togglePlay);
+// 全屏且控件已隐藏时，点画面只是把控件叫出来，不切换播放
+// （pointerdown 会先把控件显示出来，所以要记住按下那一刻是不是隐藏的）
+let hiddenAtDown = false;
+video.addEventListener('pointerdown', () => { hiddenAtDown = $('stage').classList.contains('ui-hidden'); });
+video.addEventListener('click', () => { if (hiddenAtDown) { hiddenAtDown = false; showUi(); return; } togglePlay(); });
 $('bigPlay').onclick = togglePlay;
 video.addEventListener('play', () => { $('playBtn').textContent = '⏸'; $('bigPlay').hidden = true; });
 video.addEventListener('pause', () => { $('playBtn').textContent = '▶'; $('bigPlay').hidden = false; });
@@ -200,6 +245,20 @@ $('prev').onclick = () => load(cur - 1);
 $('next').onclick = () => load(cur + 1);
 $('modeSeq').onclick = () => setMode('seq');
 $('modeOne').onclick = () => setMode('one');
+// 全屏时控件自动隐藏：3 秒没操作就藏起来，碰一下画面再出来
+let uiTimer = 0;
+const isFull = () => !!document.fullscreenElement;
+function hideUi() { if (isFull() && !video.paused) $('stage').classList.add('ui-hidden'); }
+function showUi() {
+  $('stage').classList.remove('ui-hidden');
+  clearTimeout(uiTimer);
+  if (isFull()) uiTimer = setTimeout(hideUi, 3000);
+}
+['pointermove', 'pointerdown', 'touchstart', 'keydown'].forEach((ev) => $('stage').addEventListener(ev, showUi, { passive: true }));
+document.addEventListener('fullscreenchange', () => { showUi(); if (!isFull()) { clearTimeout(uiTimer); $('stage').classList.remove('ui-hidden'); } });
+video.addEventListener('pause', showUi);
+video.addEventListener('play', showUi);
+
 $('fullBtn').onclick = () => {
   const el = $('stage');
   if (document.fullscreenElement) document.exitFullscreen();
@@ -219,6 +278,13 @@ video.addEventListener('ended', () => {
   else location.href = '/';
 });
 video.addEventListener('error', () => {
+  // HLS 会话空闲太久会被服务端清掉，从当前位置重开一次
+  if (useHls && ep() && !ep().native && !hlsRetried) {
+    const t = nowTime();
+    load(cur, t);
+    hlsRetried = true;
+    return;
+  }
   if (video.src) $('now').textContent += '（播放失败）';
 });
 init();

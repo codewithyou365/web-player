@@ -63,7 +63,7 @@ function browse(folderId, publicShow) {
   const shows = (l && l.shows) || [];
   const folders = loadFolders();
   const current = folderId ? folders.find((f) => f.id === folderId) : null;
-  if (folderId && !current) return null;
+  if (folderId && !current) return browseDir(folderId, shows, publicShow);
   const base = current ? current.dir : null;
 
   const inScope = shows.filter((s) => !base || isUnder(showDir(s), base));
@@ -105,10 +105,71 @@ function browse(folderId, publicShow) {
   };
 }
 
+/** 节目所在的上级目录（硬盘上的父目录，可以是扫描根目录）；节目本身就是根目录时为 null */
+function parentOf(show) {
+  const dir = showDir(show);
+  if (dir === show.root) return null;
+  const parent = path.dirname(dir);
+  return { id: sha1(parent), name: path.basename(parent) };
+}
+
+/** 按 id 找到某个节目的上级目录（含扫描根目录），返回 { dir, root } */
+function findDir(id, shows) {
+  for (const s of shows) {
+    let dir = showDir(s);
+    while (dir !== s.root && isUnder(dir, s.root)) {
+      dir = path.dirname(dir);
+      if (sha1(dir) === id) return { dir, root: s.root };
+    }
+  }
+  return null;
+}
+
+/**
+ * 浏览硬盘上的任意上级目录（没归档也能进，播放页“上级目录”用）。
+ * 直接子目录是节目就显示节目卡片，子目录里还有更深的节目就折叠成文件夹卡片。
+ */
+function browseDir(id, shows, publicShow) {
+  const found = findDir(id, shows);
+  if (!found) return null;
+  const { dir: base, root } = found;
+  const folderMap = new Map();
+  const direct = [];
+  for (const s of shows) {
+    const dir = showDir(s);
+    if (dir === base || !isUnder(dir, base)) continue;
+    const segs = path.relative(base, dir).split(path.sep);
+    if (segs.length === 1) {
+      direct.push(publicShow(s, false));
+      continue;
+    }
+    const sub = path.join(base, segs[0]);
+    let entry = folderMap.get(sub);
+    if (!entry) {
+      entry = { id: sha1(sub), name: segs[0], dir: sub, relPath: relOf(sub, s), count: 0, cover: null, type: 'folder', archived: false };
+      folderMap.set(sub, entry);
+    }
+    entry.count++;
+    if (!entry.cover && s.cover) entry.cover = s.cover;
+  }
+  // 面包屑：从扫描根目录到当前目录的每一级
+  const crumbs = [];
+  for (let d = base; d !== root && isUnder(d, root);) {
+    d = path.dirname(d);
+    crumbs.unshift({ id: sha1(d), name: path.basename(d) });
+  }
+  return {
+    folder: { id, name: path.basename(base), dir: base, parent: crumbs.length ? crumbs[crumbs.length - 1].id : null },
+    crumbs,
+    folders: [...folderMap.values()].sort((a, b) => collator.compare(a.name, b.name)),
+    shows: direct.sort((a, b) => collator.compare(a.name, b.name)),
+  };
+}
+
 /** 文件夹相对扫描根目录的路径（借用其中一个节目的 root） */
 function relOf(dir, show) {
   const rel = path.relative(show.root, dir);
   return rel && !rel.startsWith('..') ? rel : dir;
 }
 
-module.exports = { loadFolders, addFolder, removeFolder, ancestorsOf, browse };
+module.exports = { loadFolders, addFolder, removeFolder, ancestorsOf, parentOf, browse };

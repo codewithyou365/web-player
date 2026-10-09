@@ -15,6 +15,8 @@ body {
   font-size: 16px;
 }
 a { color: inherit; text-decoration: none; }
+/* iPad Safari：长按链接/图片不弹预览和菜单，也不选中文字（孩子常会按住卡片不放） */
+a, img, button, .card, .hist-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 header {
   position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; gap: 12px;
@@ -71,6 +73,16 @@ header h1 { margin: 0; font-size: 22px; flex: 1; }
 .card:hover .info { opacity: 1; }
 .empty { padding: 60px; text-align: center; color: var(--muted); }
 
+/* 喜欢 */
+.fav-btn {
+  position: absolute; left: 8px; top: 8px; z-index: 2;
+  width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, 0.85); font-size: 18px; line-height: 1; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.fav-btn:hover { background: #fff; }
+.card.liked { box-shadow: 0 0 0 3px #ff8fa3, var(--shadow); }
+
 /* 最近播放 */
 .section-title, .recent h2 { font-size: 18px; margin: 18px 22px 0; }
 .recent-row {
@@ -82,6 +94,32 @@ header h1 { margin: 0; font-size: 22px; flex: 1; }
 .recent-card .bar > div { height: 100%; background: var(--accent); }
 .recent-card .sub { padding: 0 12px 10px; font-size: 13px; color: var(--muted); }
 .recent-card .name { padding-bottom: 4px; font-size: 15px; }
+
+.recent h2 .more { font-size: 14px; font-weight: normal; color: var(--accent); margin-left: 8px; }
+
+/* 历史播放 */
+.history { max-width: 900px; margin: 0 auto; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 12px; }
+.hist-item {
+  display: flex; gap: 14px; align-items: center; padding: 10px;
+  background: var(--card); border-radius: 14px; box-shadow: var(--shadow);
+  -webkit-tap-highlight-color: transparent;
+}
+.hist-item:hover { background: #fff5ee; }
+.hist-cover { position: relative; flex: 0 0 200px; border-radius: 10px; overflow: hidden; background: #eee; }
+.hist-cover img, .hist-cover .placeholder { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
+.hist-cover .placeholder { display: flex; align-items: center; justify-content: center; font-size: 40px; }
+.hist-cover .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(0,0,0,0.3); }
+.hist-cover .bar > div { height: 100%; background: var(--accent); }
+.hist-text { flex: 1; min-width: 0; }
+.hist-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-sub { font-size: 14px; color: #666; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-when { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.hist-del {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  background: #f1f1f1; color: #888; font-size: 16px;
+}
+.hist-del:hover { background: #c81e1e; color: #fff; }
+@media (max-width: 600px) { .hist-cover { flex-basis: 130px; } .hist-name { font-size: 15px; } }
 
 /* 播放页 */
 .player-layout { display: flex; gap: 0; height: calc(100vh - 55px); }
@@ -98,8 +136,18 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; background: #00
 .seekbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0; background: #1a1a1a; color: #bbb; font-size: 13px; }
 .seekbar .time { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
 .seekbar input[type=range] { flex: 1; height: 28px; accent-color: var(--accent); cursor: pointer; margin: 0; }
-.player-main:fullscreen { background: #000; }
-.player-main:fullscreen .seekbar, .player-main:fullscreen .controls { background: rgba(0,0,0,0.8); }
+/* 全屏：进度条和按钮浮在画面底部，几秒不动自动隐藏，点一下画面再出来 */
+.player-main:fullscreen { background: #000; position: relative; }
+.player-main:fullscreen .video-wrap { position: static; flex: 1; height: auto; min-height: 0; }
+.player-main:fullscreen .video-wrap video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.player-main:fullscreen .seekbar, .player-main:fullscreen .controls {
+  position: absolute; left: 0; right: 0; z-index: 2;
+  background: rgba(0,0,0,0.65); transition: opacity .25s;
+}
+.player-main:fullscreen .controls { bottom: 0; }
+.player-main:fullscreen .seekbar { bottom: 56px; padding-bottom: 6px; }
+.player-main:fullscreen.ui-hidden .seekbar, .player-main:fullscreen.ui-hidden .controls { opacity: 0; pointer-events: none; }
+.player-main:fullscreen.ui-hidden { cursor: none; }
 .controls {
   display: flex; align-items: center; gap: 10px; padding: 10px 14px;
   background: #1a1a1a; color: #ddd; flex-wrap: wrap;
@@ -183,6 +231,15 @@ header h1 .sep { color: #bbb; margin: 0 8px; font-weight: normal; }
 }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn:disabled { opacity: .5; cursor: default; }
+#parentBtn { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 .status { margin-top: 16px; color: var(--muted); }
 .progress { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 8px; }
 .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+
+/* 设置页：局域网地址 */
+.lan { background: #fff; border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; font-size: 15px; box-shadow: var(--shadow); }
+.lan code { background: #f3ecd8; padding: 2px 8px; border-radius: 6px; font-size: 15px; margin-right: 6px; }
+
+/* 搜索页 */
+.search-form { flex: 1; display: flex; gap: 8px; min-width: 0; }
+.search-form input { flex: 1; min-width: 0; font-size: 17px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 10px; background: #fff; }

@@ -3,18 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="动画片">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <title>动画片</title>
 <link rel="stylesheet" href="/style.css">
 <script src="/admin.js"></script>
+<script src="/back.js"></script>
 </head>
 <body>
 <header>
+  <a class="icon-btn" href="/" id="backBtn" data-back title="返回上一页" hidden>⬅️</a>
   <a class="icon-btn" href="/" id="homeBtn" title="首页" hidden>🏠</a>
   <h1 id="crumbs">🎬 动画片</h1>
+  <a class="icon-btn" href="/search.html" title="搜索">🔍</a>
+  <a class="icon-btn" href="/history.html" title="历史播放">🕘</a>
   <a class="icon-btn" href="/settings.html" title="设置">⚙️</a>
 </header>
 <section id="recent" class="recent" hidden>
-  <h2>▶️ 最近播放</h2>
+  <h2>▶️ 最近播放 <a class="more" href="/history.html">全部历史 ›</a></h2>
   <div class="recent-row" id="recentRow"></div>
 </section>
 <h2 class="section-title" id="allTitle" hidden>📚 全部</h2>
@@ -32,7 +39,8 @@ async function loadRecent() {
   document.getElementById('recentRow').innerHTML = items.map((s) => {
     const pct = s.duration ? Math.min(100, Math.round(s.time / s.duration * 100)) : 0;
     return `
-    <a class="card recent-card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}">
+    <a class="card recent-card${s.fav ? ' liked' : ''}" href="/player.html?id=${s.id}" title="${esc(s.relPath)}">
+      ${favBtn(s)}
       ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
       <div class="bar"><div style="width:${pct}%"></div></div>
       <div class="name">${esc(s.name)}</div>
@@ -41,6 +49,21 @@ async function loadRecent() {
   }).join('');
 }
 
+function favBtn(s) {
+  return `<button class="fav-btn" data-fav="${s.id}" data-on="${s.fav ? 1 : 0}" title="${s.fav ? '取消喜欢' : '喜欢'}">${s.fav ? '❤️' : '🤍'}</button>`;
+}
+
+// 喜欢/取消喜欢（首页网格和最近播放共用），改完整页刷新，两处的心形和排序一起更新
+async function toggleFav(ev) {
+  const btn = ev.target.closest('[data-fav]');
+  if (!btn) return false;
+  ev.preventDefault();
+  await fetch('/api/favorites/' + btn.dataset.fav, { method: btn.dataset.on === '1' ? 'DELETE' : 'PUT' });
+  load();
+  return true;
+}
+document.getElementById('recentRow').onclick = toggleFav;
+
 function coverHtml(s) {
   return s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">${s.type === 'folder' ? '📁' : '🎞️'}</div>`;
 }
@@ -48,8 +71,12 @@ function coverHtml(s) {
 function renderHeader(data) {
   const home = document.getElementById('homeBtn');
   const h = document.getElementById('crumbs');
-  if (!data.folder) { home.hidden = true; h.innerHTML = '🎬 动画片'; document.title = '动画片'; return; }
-  home.hidden = false;
+  const back = document.getElementById('backBtn');
+  if (!data.folder) { home.hidden = back.hidden = true; h.innerHTML = '🎬 动画片'; document.title = '动画片'; return; }
+  home.hidden = back.hidden = false;
+  // 直接打开的文件夹没有上一页时，返回上一级文件夹
+  const parent = data.crumbs[data.crumbs.length - 1];
+  back.dataset.fallback = parent ? '/?folder=' + parent.id : '/';
   const parts = [`<a href="/">全部</a>`, ...data.crumbs.map((c) => `<a href="/?folder=${c.id}">${esc(c.name)}</a>`), `<span>📁 ${esc(data.folder.name)}</span>`];
   h.innerHTML = parts.join('<span class="sep">›</span>');
   document.title = data.folder.name;
@@ -63,7 +90,9 @@ async function load() {
   const data = await res.json();
   renderHeader(data);
   const admin = Admin.on();
-  const items = [...data.folders, ...data.shows];
+  // 喜欢的节目放最前面（服务端已按喜欢时间倒序排好），然后是文件夹，再是其它节目
+  const favs = data.shows.filter((s) => s.fav);
+  const items = [...favs, ...data.folders, ...data.shows.filter((s) => !s.fav)];
   if (!items.length) {
     grid.innerHTML = folderId
       ? '<div class="empty">这个文件夹是空的。</div>'
@@ -73,37 +102,38 @@ async function load() {
   }
   grid.innerHTML = items.map((s) => s.type === 'folder' ? `
     <a class="card folder-card" href="/?folder=${s.id}" title="${esc(s.relPath)}（${s.count} 个节目）" data-id="${s.id}">
-      ${admin ? `<button class="del-btn unarchive" data-unarchive="${s.id}" title="取消归档：把里面的节目放回上一层">📂</button>` : ''}
+      ${admin && s.archived !== false ? `<button class="del-btn unarchive" data-unarchive="${s.id}" title="取消归档：把里面的节目放回上一层">📂</button>` : ''}
       ${coverHtml(s)}
       <div class="info">${esc(s.relPath)}<br>${s.count} 个节目</div>
       <div class="name">📁 ${esc(s.name)}</div>
     </a>` : `
-    <a class="card" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）" data-id="${s.id}">
+    <a class="card${s.fav ? ' liked' : ''}" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）" data-id="${s.id}">
+      ${favBtn(s)}
       ${admin ? `<button class="del-btn archive" data-archive="${s.id}" title="归档到上级目录">🗂</button><button class="del-btn" data-del="${s.id}" title="彻底删除这个节目">🗑</button>` : ''}
       ${coverHtml(s)}
       <div class="info">${esc(s.relPath)}<br>共 ${s.count} 集</div>
       <div class="name">${esc(s.name)}</div>
     </a>`).join('');
 
-  if (admin) {
-    grid.onclick = async (ev) => {
-      const del = ev.target.closest('[data-del]');
-      const arc = ev.target.closest('[data-archive]');
-      const un = ev.target.closest('[data-unarchive]');
-      if (!del && !arc && !un) return;
-      ev.preventDefault();
-      if (del) {
-        const s = data.shows.find((x) => x.id === del.dataset.del);
-        if (s && (await Admin.deleteShow(s))) load();
-      } else if (arc) {
-        const s = data.shows.find((x) => x.id === arc.dataset.archive);
-        if (s && (await Admin.archiveShow(s))) load();
-      } else if (un) {
-        const f = data.folders.find((x) => x.id === un.dataset.unarchive);
-        if (f && (await Admin.unarchive(f))) load();
-      }
-    };
-  }
+  grid.onclick = async (ev) => {
+    if (await toggleFav(ev)) return;
+    if (!admin) return;
+    const del = ev.target.closest('[data-del]');
+    const arc = ev.target.closest('[data-archive]');
+    const un = ev.target.closest('[data-unarchive]');
+    if (!del && !arc && !un) return;
+    ev.preventDefault();
+    if (del) {
+      const s = data.shows.find((x) => x.id === del.dataset.del);
+      if (s && (await Admin.deleteShow(s))) load();
+    } else if (arc) {
+      const s = data.shows.find((x) => x.id === arc.dataset.archive);
+      if (s && (await Admin.archiveShow(s))) load();
+    } else if (un) {
+      const f = data.folders.find((x) => x.id === un.dataset.unarchive);
+      if (f && (await Admin.unarchive(f))) load();
+    }
+  };
 }
 load();
 </script>

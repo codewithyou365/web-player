@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">动画片</string>
+    <string name="notif_channel">局域网播放服务</string>
+    <string name="notif_title">动画片服务运行中</string>
+</resources>

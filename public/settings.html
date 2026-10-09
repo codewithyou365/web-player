@@ -3,15 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="动画片">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <title>设置</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/back.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" title="返回">🏠</a>
+  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
+  <a class="icon-btn" href="/" title="首页">🏠</a>
   <h1>设置</h1>
 </header>
 <main class="settings">
+  <div class="lan" id="lan" hidden></div>
   <h2>管理模式</h2>
   <label class="switch-row">
     <input type="checkbox" id="adminMode">
@@ -29,6 +35,11 @@
   <button class="btn" id="scan">重新扫描</button>
   <div class="status" id="status"></div>
   <div class="progress"><div id="bar"></div></div>
+
+  <h2>搜索索引</h2>
+  <p style="color:#888;font-size:14px">首页 🔍 搜索要先建立一次索引。除了节目名和集名，节目目录里的字幕（srt/ass/vtt）、txt 等文本也会收进去。建好以后，重新扫描或删除视频时会自动更新。</p>
+  <button class="btn" id="buildIdx">建立搜索索引</button>
+  <div class="status" id="idxStatus"></div>
 </main>
 <script src="/admin.js"></script>
 <script>
@@ -80,7 +91,30 @@ async function poll() {
   }
 }
 fetch('/api/config').then((r) => r.json()).then((cfg) => { dirs = cfg.scanDirs; render(); });
+// 本机局域网地址：其他设备的浏览器打开这些地址就能看
+fetch('/api/info').then((r) => (r.ok ? r.json() : null)).then((info) => {
+  if (!info || !info.addresses || !info.addresses.length) return;
+  const el = document.getElementById('lan');
+  el.hidden = false;
+  el.innerHTML = '📡 局域网里其他设备打开：' + info.addresses.map((a) => `<code>${esc(a)}</code>`).join(' ');
+}).catch(() => {});
 poll();
+
+function showIndexStatus(st) {
+  const el = document.getElementById('idxStatus');
+  document.getElementById('buildIdx').textContent = st.built ? '重建搜索索引' : '建立搜索索引';
+  if (!st.built) { el.textContent = '还没有建立索引，搜索功能不可用。'; return; }
+  el.textContent = `已建立：${st.shows} 个节目、${st.episodes} 集、${st.texts || 0} 个文本，${new Date(st.builtAt).toLocaleString()}` + (st.stale ? '。视频库有变化，建议重建。' : '');
+}
+document.getElementById('buildIdx').onclick = async (ev) => {
+  ev.target.disabled = true;
+  document.getElementById('idxStatus').textContent = '正在建立索引（读取字幕等文本，可能要几十秒）…';
+  const res = await fetch('/api/search/index', { method: 'POST' });
+  const st = await res.json().catch(() => ({}));
+  if (res.ok) showIndexStatus(st); else document.getElementById('idxStatus').textContent = '建立失败：' + (st.error || res.status);
+  ev.target.disabled = false;
+};
+fetch('/api/search/index').then((r) => (r.ok ? r.json() : null)).then((st) => st && showIndexStatus(st)).catch(() => {});
 </script>
 </body>
 </html>
