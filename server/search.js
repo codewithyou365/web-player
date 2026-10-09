@@ -170,7 +170,8 @@ function snippet(body, terms, phrase) {
 }
 
 /** 空格分开的多个词都要命中（AND）。
- *  返回 [{ showId, file | null, pick, reason }]：file 为 null 表示整个节目；pick 表示是文本命中，进去让用户自己选集 */
+ *  返回 [{ showId, file | null, pick, why }]：file 为 null 表示整个节目；pick 表示是文本命中，进去让用户自己选集。
+ *  why 是命中原因，前端按语言拼成文字：{ kind: name|dir|title|eps|text, terms?, count?, file?, snippet? } */
 function search(query) {
   // 单个英文字母/数字（a、I、1）几乎处处命中，丢掉；单个汉字保留
   const words = [...new Map(query.split(/[\s,，、]+/).map((w) => [norm(w), w.trim()])).entries()].filter(([n]) => n.length >= 2 || /[^\x00-\x7f]/.test(n));
@@ -212,7 +213,7 @@ function search(query) {
     const inName = terms.filter((t) => r.name.includes(t));
     const score = terms.reduce((a, t) => a + (r.name.includes(t) ? 100 : 50) + t.length, 0) - r.name.length / 100 + (phrase && r.name.includes(phrase) ? 300 : 0);
     const shown = inName.length ? inName : terms;
-    out.push({ showId: r.id, file: null, score, reason: `${inName.length ? '节目名' : '所在目录'}包含「${shown.map(label).join('」「')}」` });
+    out.push({ showId: r.id, file: null, score, why: { kind: inName.length ? 'name' : 'dir', terms: shown.map(label) } });
   }
 
   const byShow = new Map();
@@ -220,12 +221,12 @@ function search(query) {
     const inTitle = terms.filter((t) => r.title.includes(t));
     const score = inTitle.reduce((a, t) => a + 20 + t.length, 0) + (terms.length - inTitle.length) * 5 + (phrase && r.title.includes(phrase) ? 250 : 0);
     if (!byShow.has(r.show_id)) byShow.set(r.show_id, []);
-    byShow.get(r.show_id).push({ showId: r.show_id, file: r.file, score, reason: `集名包含「${inTitle.map(label).join('」「')}」` });
+    byShow.get(r.show_id).push({ showId: r.show_id, file: r.file, score, why: { kind: 'title', terms: inTitle.map(label) } });
   }
   for (const [showId, eps] of byShow) {
     // 一个节目里命中很多集（比如英文名只出现在集名里）：给整个节目一条，单集只留最好的几条，免得刷屏
     if (eps.length > EPS_PER_SHOW && !matchedShows.has(showId)) {
-      out.push({ showId, file: null, score: 40 + eps.length, reason: `有 ${eps.length} 集的${eps[0].reason}` });
+      out.push({ showId, file: null, score: 40 + eps.length, why: { kind: 'eps', count: eps.length, terms: eps[0].why.terms } });
     }
     out.push(...eps.sort((a, b) => b.score - a.score).slice(0, EPS_PER_SHOW));
   }
@@ -245,9 +246,8 @@ function search(query) {
       const sc = textScore(r);
       if (sc > bestScore) [best, bestScore] = [r, sc];
     }
-    const where = rows.length > 1 ? `${rows.length} 个文本命中，如「${path.basename(best.file)}」` : `「${path.basename(best.file)}」`;
     const snip = snippet(best.body, terms.filter((t) => best.body_norm.includes(t)), phrase);
-    out.push({ showId, file: null, pick: true, score: bestScore + Math.min(rows.length, 9), reason: where + (snip ? `：${snip}` : '') });
+    out.push({ showId, file: null, pick: true, score: bestScore + Math.min(rows.length, 9), why: { kind: 'text', count: rows.length, file: path.basename(best.file), snippet: snip } });
   }
 
   // 同分时节目排在单集前面；sort 稳定，其余保持库里的顺序

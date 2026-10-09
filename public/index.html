@@ -6,27 +6,29 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="动画片">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>动画片</title>
+<title data-i18n="appName">动画片</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js"></script>
 <script src="/admin.js"></script>
 <script src="/back.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" id="backBtn" data-back title="返回上一页" hidden>⬅️</a>
-  <a class="icon-btn" href="/" id="homeBtn" title="首页" hidden>🏠</a>
-  <h1 id="crumbs">🎬 动画片</h1>
-  <a class="icon-btn" href="/search.html" title="搜索">🔍</a>
-  <a class="icon-btn" href="/history.html" title="历史播放">🕘</a>
-  <a class="icon-btn" href="/settings.html" title="设置">⚙️</a>
+  <a class="icon-btn" href="/" id="backBtn" data-back data-i18n-title="back" hidden>⬅️</a>
+  <a class="icon-btn" href="/" id="homeBtn" data-i18n-title="home" hidden>🏠</a>
+  <h1 id="crumbs"></h1>
+  <a class="icon-btn" href="/search.html" data-i18n-title="search">🔍</a>
+  <a class="icon-btn" href="/history.html" data-i18n-title="history">🕘</a>
+  <a class="icon-btn" href="/settings.html" data-i18n-title="settings">⚙️</a>
 </header>
 <section id="recent" class="recent" hidden>
-  <h2>▶️ 最近播放 <a class="more" href="/history.html">全部历史 ›</a></h2>
+  <h2><span data-i18n="recent"></span> <a class="more" href="/history.html" data-i18n="allHistory"></a></h2>
   <div class="recent-row" id="recentRow"></div>
 </section>
-<h2 class="section-title" id="allTitle" hidden>📚 全部</h2>
+<h2 class="section-title" id="allTitle" data-i18n="allTitle" hidden></h2>
 <main id="grid" class="grid"></main>
 <script>
+I18n.apply();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
 const folderId = new URLSearchParams(location.search).get('folder') || '';
@@ -44,13 +46,13 @@ async function loadRecent() {
       ${s.cover ? `<img class="cover" src="${s.cover}" alt="" loading="lazy">` : `<div class="cover placeholder">🎞️</div>`}
       <div class="bar"><div style="width:${pct}%"></div></div>
       <div class="name">${esc(s.name)}</div>
-      <div class="sub">第 ${s.index + 1} 集 · 看到 ${fmt(s.time)}</div>
+      <div class="sub">${t('epAt', { n: s.index + 1, time: fmt(s.time) })}</div>
     </a>`;
   }).join('');
 }
 
 function favBtn(s) {
-  return `<button class="fav-btn" data-fav="${s.id}" data-on="${s.fav ? 1 : 0}" title="${s.fav ? '取消喜欢' : '喜欢'}">${s.fav ? '❤️' : '🤍'}</button>`;
+  return `<button class="fav-btn" data-fav="${s.id}" data-on="${s.fav ? 1 : 0}" title="${t(s.fav ? 'unlike' : 'like')}">${s.fav ? '❤️' : '🤍'}</button>`;
 }
 
 // 喜欢/取消喜欢（首页网格和最近播放共用），改完整页刷新，两处的心形和排序一起更新
@@ -72,12 +74,12 @@ function renderHeader(data) {
   const home = document.getElementById('homeBtn');
   const h = document.getElementById('crumbs');
   const back = document.getElementById('backBtn');
-  if (!data.folder) { home.hidden = back.hidden = true; h.innerHTML = '🎬 动画片'; document.title = '动画片'; return; }
+  if (!data.folder) { home.hidden = back.hidden = true; h.textContent = '🎬 ' + t('appName'); document.title = t('appName'); return; }
   home.hidden = back.hidden = false;
   // 直接打开的文件夹没有上一页时，返回上一级文件夹
   const parent = data.crumbs[data.crumbs.length - 1];
   back.dataset.fallback = parent ? '/?folder=' + parent.id : '/';
-  const parts = [`<a href="/">全部</a>`, ...data.crumbs.map((c) => `<a href="/?folder=${c.id}">${esc(c.name)}</a>`), `<span>📁 ${esc(data.folder.name)}</span>`];
+  const parts = [`<a href="/">${t('all')}</a>`, ...data.crumbs.map((c) => `<a href="/?folder=${c.id}">${esc(c.name)}</a>`), `<span>📁 ${esc(data.folder.name)}</span>`];
   h.innerHTML = parts.join('<span class="sep">›</span>');
   document.title = data.folder.name;
 }
@@ -95,23 +97,23 @@ async function load() {
   const items = [...favs, ...data.folders, ...data.shows.filter((s) => !s.fav)];
   if (!items.length) {
     grid.innerHTML = folderId
-      ? '<div class="empty">这个文件夹是空的。</div>'
-      : '<div class="empty">还没有节目。<br>正在扫描，或者到 <a href="/settings.html">设置</a> 添加目录。</div>';
+      ? `<div class="empty">${t('emptyFolder')}</div>`
+      : `<div class="empty">${t('emptyLibrary')}</div>`;
     if (!folderId) setTimeout(load, 3000);
     return;
   }
   grid.innerHTML = items.map((s) => s.type === 'folder' ? `
-    <a class="card folder-card" href="/?folder=${s.id}" title="${esc(s.relPath)}（${s.count} 个节目）" data-id="${s.id}">
-      ${admin && s.archived !== false ? `<button class="del-btn unarchive" data-unarchive="${s.id}" title="取消归档：把里面的节目放回上一层">📂</button>` : ''}
+    <a class="card folder-card" href="/?folder=${s.id}" title="${esc(t('folderTip', { path: s.relPath, n: s.count }))}" data-id="${s.id}">
+      ${admin && s.archived !== false ? `<button class="del-btn unarchive" data-unarchive="${s.id}" title="${t('unarchiveTip')}">📂</button>` : ''}
       ${coverHtml(s)}
-      <div class="info">${esc(s.relPath)}<br>${s.count} 个节目</div>
+      <div class="info">${esc(s.relPath)}<br>${t('nShows', { n: s.count })}</div>
       <div class="name">📁 ${esc(s.name)}</div>
     </a>` : `
-    <a class="card${s.fav ? ' liked' : ''}" href="/player.html?id=${s.id}" title="${esc(s.relPath)}（${s.count} 集）" data-id="${s.id}">
+    <a class="card${s.fav ? ' liked' : ''}" href="/player.html?id=${s.id}" title="${esc(t('showTip', { path: s.relPath, n: s.count }))}" data-id="${s.id}">
       ${favBtn(s)}
-      ${admin ? `<button class="del-btn archive" data-archive="${s.id}" title="归档到上级目录">🗂</button><button class="del-btn" data-del="${s.id}" title="彻底删除这个节目">🗑</button>` : ''}
+      ${admin ? `<button class="del-btn archive" data-archive="${s.id}" title="${t('archiveTip')}">🗂</button><button class="del-btn" data-del="${s.id}" title="${t('deleteShowTip')}">🗑</button>` : ''}
       ${coverHtml(s)}
-      <div class="info">${esc(s.relPath)}<br>共 ${s.count} 集</div>
+      <div class="info">${esc(s.relPath)}<br>${t('nEps', { n: s.count })}</div>
       <div class="name">${esc(s.name)}</div>
     </a>`).join('');
 

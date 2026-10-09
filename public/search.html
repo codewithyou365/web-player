@@ -6,21 +6,23 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="动画片">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>搜索</title>
+<title data-i18n="search">搜索</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js"></script>
 <script src="/back.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
-  <a class="icon-btn" href="/" title="首页">🏠</a>
+  <a class="icon-btn" href="/" data-back data-i18n-title="back">⬅️</a>
+  <a class="icon-btn" href="/" data-i18n-title="home">🏠</a>
   <form class="search-form" id="form">
-    <input id="q" type="search" placeholder="节目名、集名，如：小猪佩奇 泥坑" autocomplete="off" enterkeyhint="search">
-    <button class="btn primary" id="go">搜索</button>
+    <input id="q" type="search" data-i18n-placeholder="searchPlaceholder" autocomplete="off" enterkeyhint="search">
+    <button class="btn primary" id="go" data-i18n="search"></button>
   </form>
 </header>
-<main class="history" id="list"><div class="empty">输入节目名、集名、目录名或字幕里的台词，多个词用空格隔开，比如「小猪佩奇 泥坑」。</div></main>
+<main class="history" id="list"><div class="empty" data-i18n="searchIntro"></div></main>
 <script>
+I18n.apply();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const list = document.getElementById('list');
 const input = document.getElementById('q');
@@ -28,7 +30,7 @@ const go = document.getElementById('go');
 
 function render(data) {
   const items = data.results;
-  if (!items.length) { list.innerHTML = '<div class="empty">没有找到，换个词试试（多个词用空格隔开）</div>'; return; }
+  if (!items.length) { list.innerHTML = `<div class="empty">${esc(t('noResults'))}</div>`; return; }
   list.innerHTML = items.map((s) => `
     <a class="hist-item" href="/player.html?id=${s.id}${s.episode != null ? '&ep=' + s.episode : s.pick ? '&pick=1' : ''}" title="${esc(s.relPath)}">
       <div class="hist-cover">
@@ -36,36 +38,43 @@ function render(data) {
       </div>
       <div class="hist-text">
         <div class="hist-name">${s.fav ? '❤️ ' : ''}${esc(s.name)}</div>
-        <div class="hist-sub">${s.episode != null ? `第 ${s.episode + 1} 集 · ${esc(s.epTitle)}` : `共 ${s.count} 集${s.pick ? ' · 点进去自己选一集' : ''}`}</div>
-        <div class="hist-when">${esc(s.reason)}</div>
+        <div class="hist-sub">${s.episode != null ? esc(t('epOf', { n: s.episode + 1, title: s.epTitle })) : t('nEps', { n: s.count }) + (s.pick ? t('pickHint') : '')}</div>
+        <div class="hist-when">${esc(why(s.why))}</div>
       </div>
     </a>`).join('');
 }
 
+// 命中原因：服务端给结构化数据，这里按语言拼成文字
+function why(w) {
+  if (!w) return '';
+  const p = { terms: w.terms || [], n: w.count, file: w.file, snippet: w.snippet };
+  return t({ name: 'whyName', dir: 'whyDir', title: 'whyTitle', eps: 'whyEps', text: 'whyText' }[w.kind] || '', p);
+}
+
 // 还没建过索引：先让用户建一次
 function renderNeedIndex(q) {
-  list.innerHTML = `<div class="empty">搜索前需要先建立一次搜索索引（会读取字幕等文本，可能要几十秒；之后扫描会自动更新）。<br><br>
-    <button class="btn primary" id="buildIdx">建立搜索索引</button></div>`;
+  list.innerHTML = `<div class="empty">${esc(t('needIndex'))}<br><br>
+    <button class="btn primary" id="buildIdx">${esc(t('buildIndex'))}</button></div>`;
   document.getElementById('buildIdx').onclick = async (ev) => {
     ev.target.disabled = true;
-    ev.target.textContent = '正在建立…';
+    ev.target.textContent = t('building');
     const res = await fetch('/api/search/index', { method: 'POST' });
     if (res.ok) run(q);
-    else list.innerHTML = '<div class="empty">建立索引失败：' + esc((await res.json().catch(() => ({}))).error || res.status) + '</div>';
+    else list.innerHTML = `<div class="empty">${esc(t('buildFailed', { err: (await res.json().catch(() => ({}))).error || res.status }))}</div>`;
   };
 }
 
 async function run(q) {
   go.disabled = true;
-  list.innerHTML = '<div class="empty">🔍 正在找…</div>';
+  list.innerHTML = `<div class="empty">${t('searching')}</div>`;
   try {
     const res = await fetch('/api/search?q=' + encodeURIComponent(q));
     const data = await res.json().catch(() => null);
-    if (!res.ok || !data) list.innerHTML = '<div class="empty">这个版本的服务端不支持搜索</div>';
+    if (!res.ok || !data) list.innerHTML = `<div class="empty">${t('searchUnsupported')}</div>`;
     else if (data.needIndex) renderNeedIndex(q);
     else render(data);
   } catch {
-    list.innerHTML = '<div class="empty">连不上服务器</div>';
+    list.innerHTML = `<div class="empty">${t('offline')}</div>`;
   }
   go.disabled = false;
 }

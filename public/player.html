@@ -6,17 +6,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="动画片">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>播放</title>
+<title data-i18n="playerTitle">播放</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js"></script>
 <script src="/back.js"></script>
 <script src="/admin.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
-  <a class="icon-btn" href="/" title="首页">🏠</a>
+  <a class="icon-btn" href="/" data-back data-i18n-title="back">⬅️</a>
+  <a class="icon-btn" href="/" data-i18n-title="home">🏠</a>
   <h1 id="title"></h1>
-  <a class="btn" id="parentBtn" title="浏览这个节目所在的上级目录" hidden>📁 上级目录</a>
+  <a class="btn" id="parentBtn" data-i18n-title="parentTip" data-i18n="parentDir" hidden></a>
 </header>
 <div class="player-layout">
   <div class="player-main" id="stage">
@@ -30,23 +31,24 @@
       <span class="time" id="tDur">0:00</span>
     </div>
     <div class="controls">
-      <button id="playBtn" title="播放/暂停">⏸</button>
-      <button id="prev">⏮ 上一集</button>
-      <button id="next">下一集 ⏭</button>
+      <button id="playBtn" data-i18n-title="playPause">⏸</button>
+      <button id="prev" data-i18n="prev"></button>
+      <button id="next" data-i18n="next"></button>
       <span class="now" id="now"></span>
-      <button id="modeSeq" title="播完自动播下一集">🔁 顺序连播</button>
-      <button id="modeOne" title="只播这一集">1️⃣ 单集播放</button>
-      <button id="favBtn" title="喜欢的节目在首页排最前面">🤍 喜欢</button>
-      <button id="fullBtn" title="全屏">⛶</button>
-      <button id="delShow" class="danger" title="从硬盘彻底删除整个节目" hidden>🗑 删除节目</button>
+      <button id="modeSeq" data-i18n-title="modeSeqTip" data-i18n="modeSeq"></button>
+      <button id="modeOne" data-i18n-title="modeOneTip" data-i18n="modeOne"></button>
+      <button id="favBtn" data-i18n-title="favTip" data-i18n="favBtn"></button>
+      <button id="fullBtn" data-i18n-title="fullscreen">⛶</button>
+      <button id="delShow" class="danger" data-i18n-title="delShowTip" data-i18n="delShow" hidden></button>
     </div>
   </div>
   <aside class="episodes">
-    <h2 id="epHead">剧集</h2>
+    <h2 id="epHead" data-i18n="episodes"></h2>
     <div id="list"></div>
   </aside>
 </div>
 <script>
+I18n.apply();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
 
@@ -89,7 +91,7 @@ function load(i, startAt = 0) {
       : `/stream/${show.id}/${i}` + (offset > 0 ? `?t=${offset}` : '');
   }
   video.play().catch(() => {});
-  $('now').textContent = `第 ${i + 1} / ${show.episodes.length} 集：${e.title}`;
+  $('now').textContent = t('nowPlaying', { i: i + 1, n: show.episodes.length, title: e.title });
   $('tDur').textContent = fmt(duration);
   saveProgress(true);
   document.querySelectorAll('.ep').forEach((el, j) => el.classList.toggle('current', j === i));
@@ -118,24 +120,24 @@ function updateBar() {
 
 function renderList() {
   const admin = Admin.on();
-  $('epHead').textContent = `剧集（${show.episodes.length}）`;
+  $('epHead').textContent = t('episodesN', { n: show.episodes.length });
   $('list').innerHTML = show.episodes.map((e) => `
     <div class="ep${e.index === cur ? ' current' : ''}" data-i="${e.index}">
       <span class="n">${e.index + 1}</span>
       <span class="t">${esc(e.title)}</span>
       <span class="d">${e.duration ? fmt(e.duration) : ''}</span>
-      ${admin ? `<button class="del-ep" data-i="${e.index}" title="彻底删除这一集">🗑</button>` : ''}
+      ${admin ? `<button class="del-ep" data-i="${e.index}" title="${t('deleteEpTip')}">🗑</button>` : ''}
     </div>`).join('');
 }
 
 function renderFav() {
-  $('favBtn').textContent = show.fav ? '❤️ 已喜欢' : '🤍 喜欢';
+  $('favBtn').textContent = t(show.fav ? 'favBtnOn' : 'favBtn');
   $('favBtn').classList.toggle('active', !!show.fav);
 }
 
 async function init() {
   show = await fetch('/api/shows/' + id).then((r) => (r.ok ? r.json() : null));
-  if (!show) { $('title').textContent = '没找到这个节目'; return; }
+  if (!show) { $('title').textContent = t('showNotFound'); return; }
   document.title = show.name;
   $('title').textContent = show.name;
   $('title').title = show.relPath;
@@ -165,7 +167,7 @@ async function init() {
         load(Math.min(cur, show.episodes.length - 1));   // 删的是正在播的：播同位置的下一集
       } else {
         if (e.index < cur) cur--;                          // 删的在前面：当前集序号前移
-        if (ep()) $('now').textContent = `第 ${cur + 1} / ${show.episodes.length} 集：${ep().title}`;
+        if (ep()) $('now').textContent = t('nowPlaying', { i: cur + 1, n: show.episodes.length, title: ep().title });
       }
       renderList();
       return;
@@ -187,7 +189,7 @@ async function init() {
     // 搜索命中的是目录里的文本（字幕等）：不自动播，让用户从右边列表自己选。
     // cur = -1 表示还没选集，这期间不保存进度（否则会把这个节目原来的断点覆盖成第 1 集 0 秒）
     cur = -1;
-    $('now').textContent = '👉 从右边的列表里选一集';
+    $('now').textContent = t('pickEpisode');
   } else if (Number.isInteger(ep) && ep >= 0 && ep < show.episodes.length) {
     load(ep, pr && pr.index === ep && pr.time > 3 ? pr.time : 0);
   } else if (pr && pr.index < show.episodes.length) {
@@ -285,7 +287,7 @@ video.addEventListener('error', () => {
     hlsRetried = true;
     return;
   }
-  if (video.src) $('now').textContent += '（播放失败）';
+  if (video.src) $('now').textContent += t('playFailed');
 });
 init();
 </script>

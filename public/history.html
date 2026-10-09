@@ -6,31 +6,35 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="动画片">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>历史播放</title>
+<title data-i18n="history">历史播放</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js"></script>
 <script src="/back.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
-  <a class="icon-btn" href="/" title="首页">🏠</a>
-  <h1>🕘 历史播放</h1>
-  <button class="btn" id="clearAll" hidden>清空全部</button>
+  <a class="icon-btn" href="/" data-back data-i18n-title="back">⬅️</a>
+  <a class="icon-btn" href="/" data-i18n-title="home">🏠</a>
+  <h1 data-i18n="historyTitle"></h1>
+  <button class="btn" id="clearAll" data-i18n="clearAll" hidden></button>
 </header>
 <main class="history" id="list"></main>
 <script>
+I18n.apply();
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (sec) => { sec = Math.max(0, Math.round(sec || 0)); const m = Math.floor(sec / 60), s = sec % 60; return m + ':' + String(s).padStart(2, '0'); };
 
-/** 今天 14:05 / 昨天 09:30 / 3月5日 20:10 / 2025年12月1日 */
+/** 今天 14:05 / 昨天 09:30 / 3月5日 20:10 / 2025年12月1日（英文：Today 14:05 / Mar 5 20:10 / Dec 1, 2025） */
 function when(ts) {
   const d = new Date(ts), now = new Date();
   const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(now) - day(d)) / 86400000);
-  if (diff === 0) return '今天 ' + hm;
-  if (diff === 1) return '昨天 ' + hm;
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+  if (diff === 0) return t('today') + ' ' + hm;
+  if (diff === 1) return t('yesterday') + ' ' + hm;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  if (I18n.lang === 'en') return d.toLocaleDateString('en-US', sameYear ? { month: 'short', day: 'numeric' } : { year: 'numeric', month: 'short', day: 'numeric' }) + (sameYear ? ' ' + hm : '');
+  if (sameYear) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
@@ -40,7 +44,7 @@ async function load() {
   items = await fetch('/api/history').then((r) => r.json());
   document.getElementById('clearAll').hidden = !items.length;
   const list = document.getElementById('list');
-  if (!items.length) { list.innerHTML = '<div class="empty">还没有播放记录。</div>'; return; }
+  if (!items.length) { list.innerHTML = `<div class="empty">${t('noHistory')}</div>`; return; }
   list.innerHTML = items.map((s) => {
     const pct = s.duration ? Math.min(100, Math.round(s.time / s.duration * 100)) : 0;
     return `
@@ -51,11 +55,11 @@ async function load() {
       </div>
       <div class="hist-text">
         <div class="hist-name">${s.fav ? '❤️ ' : ''}${esc(s.name)}</div>
-        <div class="hist-sub">第 ${s.index + 1} 集 · 看到 ${fmt(s.time)}${s.duration ? ' / ' + fmt(s.duration) : ''}</div>
+        <div class="hist-sub">${t('watchedAt', { n: s.index + 1, time: fmt(s.time) })}${s.duration ? ' / ' + fmt(s.duration) : ''}</div>
         <div class="hist-sub">${esc(s.epTitle)}</div>
         <div class="hist-when">${when(s.updatedAt)}</div>
       </div>
-      <button class="hist-del" data-del="${s.id}" title="删除这条记录">✕</button>
+      <button class="hist-del" data-del="${s.id}" title="${t('deleteRecord')}">✕</button>
     </a>`;
   }).join('');
 }
@@ -70,7 +74,7 @@ document.getElementById('list').onclick = async (ev) => {
 };
 
 document.getElementById('clearAll').onclick = async () => {
-  if (!confirm(`清空全部 ${items.length} 条播放记录？\n断点续播的进度也会一起清掉。视频文件不受影响。`)) return;
+  if (!confirm(t('clearConfirm', { n: items.length }))) return;
   await fetch('/api/progress', { method: 'DELETE' });
   load();
 };

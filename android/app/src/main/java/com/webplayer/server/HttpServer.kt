@@ -205,7 +205,7 @@ class HttpServer(
                     val episode = r.file?.let { f -> s.episodes.indexOfFirst { it.path == f } }
                     if (episode == -1) continue
                     results.put(s.publicJson(false).put("fav", favs.optLong(s.id, 0)).put("episode", episode ?: JSONObject.NULL)
-                        .put("epTitle", episode?.let { s.episodes[it].title } ?: "").put("pick", r.pick).put("reason", r.reason))
+                        .put("epTitle", episode?.let { s.episodes[it].title } ?: "").put("pick", r.pick).put("why", r.why))
                 }
                 return ok(JSONObject().put("results", results))
             }

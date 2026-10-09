@@ -6,43 +6,53 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="动画片">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<title>设置</title>
+<title data-i18n="settings">设置</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n.js"></script>
 <script src="/back.js"></script>
 </head>
 <body>
 <header>
-  <a class="icon-btn" href="/" data-back title="返回上一页">⬅️</a>
-  <a class="icon-btn" href="/" title="首页">🏠</a>
-  <h1>设置</h1>
+  <a class="icon-btn" href="/" data-back data-i18n-title="back">⬅️</a>
+  <a class="icon-btn" href="/" data-i18n-title="home">🏠</a>
+  <h1 data-i18n="settings"></h1>
 </header>
 <main class="settings">
   <div class="lan" id="lan" hidden></div>
-  <h2>管理模式</h2>
+  <h2 data-i18n="language"></h2>
+  <select id="lang" class="lang-select"></select>
+
+  <h2 data-i18n="adminMode"></h2>
   <label class="switch-row">
     <input type="checkbox" id="adminMode">
-    <span>开启后，首页和播放页会显示 🗑 删除按钮，可以把视频<b>从硬盘上彻底删除</b>（不可恢复）。只对本设备的浏览器生效，给孩子用的设备请关掉。</span>
+    <span data-i18n-html="adminModeDesc"></span>
   </label>
 
-  <h2>扫描目录</h2>
-  <p style="color:#888;font-size:14px">每个直接包含视频的文件夹会成为一个节目，文件夹名就是节目名。</p>
+  <h2 data-i18n="scanDirs"></h2>
+  <p style="color:#888;font-size:14px" data-i18n="scanDirsDesc"></p>
   <ul id="dirs" class="dirs"></ul>
   <div class="add-row">
-    <input id="newDir" placeholder="输入目录的完整路径，如 /Users/me/kids-videos">
-    <button class="btn" id="add">添加</button>
+    <input id="newDir" data-i18n-placeholder="dirPlaceholder">
+    <button class="btn" id="add" data-i18n="add"></button>
   </div>
-  <button class="btn primary" id="save">保存</button>
-  <button class="btn" id="scan">重新扫描</button>
+  <button class="btn primary" id="save" data-i18n="save"></button>
+  <button class="btn" id="scan" data-i18n="rescan"></button>
   <div class="status" id="status"></div>
   <div class="progress"><div id="bar"></div></div>
 
-  <h2>搜索索引</h2>
-  <p style="color:#888;font-size:14px">首页 🔍 搜索要先建立一次索引。除了节目名和集名，节目目录里的字幕（srt/ass/vtt）、txt 等文本也会收进去。建好以后，重新扫描或删除视频时会自动更新。</p>
-  <button class="btn" id="buildIdx">建立搜索索引</button>
+  <h2 data-i18n="searchIndex"></h2>
+  <p style="color:#888;font-size:14px" data-i18n="searchIndexDesc"></p>
+  <button class="btn" id="buildIdx" data-i18n="buildIndex"></button>
   <div class="status" id="idxStatus"></div>
 </main>
 <script src="/admin.js"></script>
 <script>
+I18n.apply();
+// 语言：只存在本机浏览器里，换了以后刷新页面生效
+const langSel = document.getElementById('lang');
+langSel.innerHTML = [['', t('langAuto')], ...Object.entries(I18n.LANGS)].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+langSel.value = I18n.saved in I18n.LANGS ? I18n.saved : '';
+langSel.onchange = () => { I18n.set(langSel.value); location.reload(); };
 document.getElementById('adminMode').checked = Admin.on();
 document.getElementById('adminMode').onchange = (e) => Admin.set(e.target.checked);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -50,8 +60,8 @@ let dirs = [];
 
 function render() {
   document.getElementById('dirs').innerHTML = dirs.map((d, i) => `
-    <li><input value="${esc(d)}" data-i="${i}"><button class="btn" data-del="${i}">删除</button></li>`).join('')
-    || '<li style="color:#888">还没有目录</li>';
+    <li><input value="${esc(d)}" data-i="${i}"><button class="btn" data-del="${i}">${t('delete')}</button></li>`).join('')
+    || `<li style="color:#888">${t('noDirs')}</li>`;
 }
 document.getElementById('dirs').addEventListener('input', (e) => {
   if (e.target.dataset.i !== undefined) dirs[Number(e.target.dataset.i)] = e.target.value;
@@ -66,7 +76,7 @@ document.getElementById('add').onclick = () => {
 document.getElementById('save').onclick = async () => {
   const cfg = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scanDirs: dirs }) }).then((r) => r.json());
   dirs = cfg.scanDirs; render();
-  document.getElementById('status').textContent = '已保存。修改目录后请点「重新扫描」。';
+  document.getElementById('status').textContent = t('saved');
 };
 document.getElementById('scan').onclick = async () => {
   await fetch('/api/scan', { method: 'POST' });
@@ -78,14 +88,14 @@ async function poll() {
   const bar = document.getElementById('bar');
   document.getElementById('scan').disabled = st.running;
   if (st.running) {
-    status.textContent = st.phase === 'collect' ? '正在查找视频目录…' : `正在处理 ${st.done} / ${st.total} 个节目（截取封面）…`;
+    status.textContent = st.phase === 'collect' ? t('collecting') : t('processing', { done: st.done, total: st.total });
     bar.style.width = st.total ? (st.done / st.total * 100) + '%' : '0';
     setTimeout(poll, 1000);
   } else if (st.phase === 'done') {
-    status.textContent = `扫描完成，共 ${st.done} 个节目。`;
+    status.textContent = t('scanDone', { n: st.done });
     bar.style.width = '100%';
   } else if (st.phase === 'error') {
-    status.textContent = '扫描出错：' + st.error;
+    status.textContent = t('scanError', { err: st.error });
   } else {
     status.textContent = '';
   }
@@ -96,22 +106,22 @@ fetch('/api/info').then((r) => (r.ok ? r.json() : null)).then((info) => {
   if (!info || !info.addresses || !info.addresses.length) return;
   const el = document.getElementById('lan');
   el.hidden = false;
-  el.innerHTML = '📡 局域网里其他设备打开：' + info.addresses.map((a) => `<code>${esc(a)}</code>`).join(' ');
+  el.innerHTML = esc(t('lanOpen')) + info.addresses.map((a) => `<code>${esc(a)}</code>`).join(' ');
 }).catch(() => {});
 poll();
 
 function showIndexStatus(st) {
   const el = document.getElementById('idxStatus');
-  document.getElementById('buildIdx').textContent = st.built ? '重建搜索索引' : '建立搜索索引';
-  if (!st.built) { el.textContent = '还没有建立索引，搜索功能不可用。'; return; }
-  el.textContent = `已建立：${st.shows} 个节目、${st.episodes} 集、${st.texts || 0} 个文本，${new Date(st.builtAt).toLocaleString()}` + (st.stale ? '。视频库有变化，建议重建。' : '');
+  document.getElementById('buildIdx').textContent = t(st.built ? 'rebuildIndex' : 'buildIndex');
+  if (!st.built) { el.textContent = t('indexNone'); return; }
+  el.textContent = t('indexBuilt', { shows: st.shows, eps: st.episodes, texts: st.texts || 0, at: new Date(st.builtAt).toLocaleString(I18n.lang === 'zh' ? 'zh-CN' : 'en-US') }) + (st.stale ? t('indexStale') : '');
 }
 document.getElementById('buildIdx').onclick = async (ev) => {
   ev.target.disabled = true;
-  document.getElementById('idxStatus').textContent = '正在建立索引（读取字幕等文本，可能要几十秒）…';
+  document.getElementById('idxStatus').textContent = t('indexBuilding');
   const res = await fetch('/api/search/index', { method: 'POST' });
   const st = await res.json().catch(() => ({}));
-  if (res.ok) showIndexStatus(st); else document.getElementById('idxStatus').textContent = '建立失败：' + (st.error || res.status);
+  if (res.ok) showIndexStatus(st); else document.getElementById('idxStatus').textContent = t('indexFailed', { err: st.error || res.status });
   ev.target.disabled = false;
 };
 fetch('/api/search/index').then((r) => (r.ok ? r.json() : null)).then((st) => st && showIndexStatus(st)).catch(() => {});

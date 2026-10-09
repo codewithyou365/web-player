@@ -124,13 +124,13 @@ class MainActivity : AppCompatActivity() {
     private fun askStorage() {
         if (Build.VERSION.SDK_INT >= 30) {
             AlertDialog.Builder(this)
-                .setTitle("需要「所有文件访问」权限")
-                .setMessage("用来扫描平板里的视频目录、截取封面，以及在管理模式下删除视频文件。接下来会跳到系统设置页，请打开开关后返回。")
-                .setPositiveButton("去设置") { _, _ ->
+                .setTitle(R.string.perm_title)
+                .setMessage(R.string.perm_message)
+                .setPositiveButton(R.string.perm_go) { _, _ ->
                     val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
                     try { startActivity(i) } catch (_: Exception) { startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
                 }
-                .setNegativeButton("以后再说", null)
+                .setNegativeButton(R.string.perm_later, null)
                 .show()
         } else {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 2)

@@ -188,7 +188,7 @@ app.get('/api/search', (req, res) => {
     if (!s) continue;
     const episode = r.file ? s.episodes.findIndex((e) => e.path === r.file) : null;
     if (episode === -1) continue;
-    results.push({ ...publicShow(s, false), fav: favs[s.id] || 0, episode, epTitle: episode == null ? '' : s.episodes[episode].title, pick: !!r.pick, reason: r.reason });
+    results.push({ ...publicShow(s, false), fav: favs[s.id] || 0, episode, epTitle: episode == null ? '' : s.episodes[episode].title, pick: !!r.pick, why: r.why });
   }
   res.json({ results });
 });

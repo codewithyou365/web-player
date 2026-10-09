@@ -225,6 +225,7 @@ header h1 .sep { color: #bbb; margin: 0 8px; font-weight: normal; }
   flex: 1; font-size: 15px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px;
 }
 .add-row { display: flex; gap: 8px; margin-bottom: 20px; }
+.lang-select { font-size: 15px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 8px; background: #fff; }
 .btn {
   font-size: 15px; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
   background: #ddd; color: #333;

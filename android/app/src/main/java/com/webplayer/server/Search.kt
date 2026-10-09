@@ -2,6 +2,7 @@ package com.webplayer.server
 
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
@@ -13,7 +14,8 @@ import kotlin.concurrent.thread
 
 private const val TAG = "Search"
 
-class SearchHit(val showId: String, val file: String?, val pick: Boolean, val reason: String)
+/** why 是命中原因，前端按语言拼成文字：{ kind: name|dir|title|eps|text, terms?, count?, file?, snippet? }（同 Node 版） */
+class SearchHit(val showId: String, val file: String?, val pick: Boolean, val why: JSONObject)
 
 /**
  * 对应 Node 版 server/search.js：用户先「建立搜索索引」，把节目名、路径、集名，以及节目目录里的文本文件（字幕等）
@@ -181,7 +183,7 @@ class Search(private val store: Store) {
         val label = kept.associate { it.key to it.value }
         // 多个词按原顺序连起来出现（「getting to be a big boy」整句）的文本额外加分
         val phrase = if (terms.size > 1) norm(query) else null
-        fun labels(ts: List<String>) = ts.joinToString("」「") { label.getValue(it) }
+        fun labels(ts: List<String>) = JSONArray(ts.map { label.getValue(it) })
 
         // 节目：每个词都出现在节目名或路径里（路径包含节目名）
         class ShowRow(val id: String, val name: String)
@@ -219,19 +221,19 @@ class Search(private val store: Store) {
             val score = terms.sumOf { (if (r.name.contains(it)) 100 else 50) + it.length }.toDouble() - r.name.length / 100.0 +
                 (if (phrase != null && r.name.contains(phrase)) 300 else 0)
             val shown = inName.ifEmpty { terms }
-            out += Scored(SearchHit(r.id, null, false, "${if (inName.isNotEmpty()) "节目名" else "所在目录"}包含「${labels(shown)}」"), score)
+            out += Scored(SearchHit(r.id, null, false, JSONObject().put("kind", if (inName.isNotEmpty()) "name" else "dir").put("terms", labels(shown))), score)
         }
 
         val byShow = LinkedHashMap<String, MutableList<Scored>>()
         for (r in epRows) {
             val inTitle = terms.filter { r.title.contains(it) }
             val score = inTitle.sumOf { 20 + it.length } + (terms.size - inTitle.size) * 5 + (if (phrase != null && r.title.contains(phrase)) 250 else 0)
-            byShow.getOrPut(r.showId) { mutableListOf() } += Scored(SearchHit(r.showId, r.file, false, "集名包含「${labels(inTitle)}」"), score.toDouble())
+            byShow.getOrPut(r.showId) { mutableListOf() } += Scored(SearchHit(r.showId, r.file, false, JSONObject().put("kind", "title").put("terms", labels(inTitle))), score.toDouble())
         }
         for ((showId, eps) in byShow) {
             // 一个节目里命中很多集：给整个节目一条，单集只留最好的几条，免得刷屏
             if (eps.size > EPS_PER_SHOW && showId !in matchedShows) {
-                out += Scored(SearchHit(showId, null, false, "有 ${eps.size} 集的${eps[0].hit.reason}"), 40.0 + eps.size)
+                out += Scored(SearchHit(showId, null, false, JSONObject().put("kind", "eps").put("count", eps.size).put("terms", eps[0].hit.why.get("terms"))), 40.0 + eps.size)
             }
             out += eps.sortedByDescending { it.score }.take(EPS_PER_SHOW)
         }
@@ -249,10 +251,9 @@ class Search(private val store: Store) {
             var best = rows[0]
             var bestScore = textScore(best)
             for (r in rows.drop(1)) { val sc = textScore(r); if (sc > bestScore) { best = r; bestScore = sc } }
-            val base = File(best.file).name
-            val where = if (rows.size > 1) "${rows.size} 个文本命中，如「$base」" else "「$base」"
             val snip = snippet(best.body, terms.filter { best.bodyNorm.contains(it) }, phrase)
-            out += Scored(SearchHit(showId, null, true, where + (if (snip.isNotEmpty()) "：$snip" else "")), (bestScore + minOf(rows.size, 9)).toDouble())
+            val why = JSONObject().put("kind", "text").put("count", rows.size).put("file", File(best.file).name).put("snippet", snip)
+            out += Scored(SearchHit(showId, null, true, why), (bestScore + minOf(rows.size, 9)).toDouble())
         }
 
         // 同分时节目排在单集前面；sortedWith 稳定，其余保持库里的顺序

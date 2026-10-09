@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cartoons</string>
+    <string name="notif_channel">LAN playback service</string>
+    <string name="notif_title">Cartoons server is running</string>
+    <string name="notif_no_lan">Not connected to a LAN</string>
+    <string name="notif_lan">LAN address: %s</string>
+    <string name="notif_open_on">Open in a browser on another device:\n%s</string>
+    <string name="perm_title">\"All files access\" required</string>
+    <string name="perm_message">Used to scan video folders on this tablet, grab cover images, and delete video files in admin mode. You\'ll be taken to system settings next — turn the switch on, then come back.</string>
+    <string name="perm_go">Open settings</string>
+    <string name="perm_later">Not now</string>
+</resources>
