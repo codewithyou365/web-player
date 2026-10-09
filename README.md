@@ -15,7 +15,19 @@
 - 局域网内 iPad / 手机 / 电视的浏览器都能打开。
 - mp4 / mov / webm 直接播放；mkv / flv / avi 等由内置 ffmpeg 实时转成 mp4 流。
 
-## 启动
+## 下载即用（推荐）
+
+到 [Releases](https://github.com/codewithyou365/web-player/releases/latest) 下载对应的安装包，不用装 Node，也不用 `npm install`：
+
+- **Mac / Windows / Linux**：下载对应的 `web-player-*.zip`，解压后双击 `start.command`（Mac）/ `start.bat`（Windows）/ `start.sh`（Linux），浏览器会自动打开。
+  Mac 第一次如果提示「无法验证开发者」，右键 → 打开。
+- **安卓平板 / 手机**：下载 `web-player-android.apk` 安装。
+
+把视频放进用户主目录下的 `kids-videos` 文件夹（或在设置页添加目录）即可。
+
+## 从源码启动
+
+需要 Node.js 22.13 以上。
 
 ```bash
 npm install
@@ -36,10 +48,10 @@ npm start
 
 ## 配置
 
-`config.json`（首次启动自动生成）：
+`config.json`（首次启动自动生成，默认扫描用户主目录下的 `kids-videos` 文件夹）：
 
 ```json
-{ "port": 8080, "scanDirs": ["/Volumes/SANSUNG/kids-videos"] }
+{ "port": 8080, "scanDirs": ["/Users/me/kids-videos"] }
 ```
 
 也可以在页面右上角 ⚙️ 设置里增删目录并重新扫描。
@@ -90,6 +102,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 `local.properties` 里的 `sdk.dir` 指向本机 Android SDK；依赖走阿里云镜像。只打 arm64-v8a 一种架构。
+
+`assembleRelease` 会读取 `android/keystore.properties`（或环境变量 `KEYSTORE_PROPERTIES` 指向的文件）做正式签名，
+没有就用 debug 签名。
+
+## 发布
+
+推送 `v*` tag 后，GitHub Actions（`.github/workflows/release.yml`）会自动打包四个平台的电脑版 zip 和 APK，并发布到 Releases：
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+电脑版用 `scripts/package-desktop.sh <mac-arm64|mac-x64|win-x64|linux-x64>` 打包，本地也能跑。
 
 ## 许可证
 

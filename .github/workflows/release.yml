@@ -1,0 +1,106 @@
+# 推送 v* tag（如 v1.0.0）时自动打包电脑版 zip 和 Android APK，发布到 GitHub Releases。
+# 需要在仓库 Settings → Secrets and variables → Actions 配置：
+#   ANDROID_KEYSTORE_BASE64    release.jks 的 base64
+#   ANDROID_KEYSTORE_PASSWORD  keystore 和 key 的密码（两者相同）
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [mac-arm64, mac-x64, win-x64, linux-x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: scripts/package-desktop.sh ${{ matrix.target }} dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: dist/*.zip
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: 准备签名
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # 没有正式签名就别发布：换签名会让用户无法覆盖升级
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=web-player
+          keyPassword=$KEYSTORE_PASSWORD
+          EOF
+      - name: 打包 APK
+        run: |
+          # v1.2.3 -> versionName 1.2.3、versionCode 10203
+          VERSION=${GITHUB_REF_NAME#v}
+          IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
+          CODE=$((MAJOR * 10000 + MINOR * 100 + ${PATCH:-0}))
+          ./gradlew assembleRelease -PversionName="$VERSION" -PversionCode="$CODE"
+          mkdir -p ../dist
+          cp app/build/outputs/apk/release/app-release.apk ../dist/web-player-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*.apk
+
+  release:
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: 发布
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'EOF'
+          ## 下载哪个？
+
+          | 设备 | 文件 |
+          | --- | --- |
+          | Mac（M1/M2/M3/M4 等 Apple 芯片） | `web-player-mac-arm64.zip` |
+          | Mac（Intel 芯片） | `web-player-mac-x64.zip` |
+          | Windows 电脑 | `web-player-win-x64.zip` |
+          | Linux | `web-player-linux-x64.zip` |
+          | 安卓平板 / 手机（64 位） | `web-player-android.apk` |
+
+          电脑版不用装 Node、不用 `npm install`：解压后双击 `start.command`（Mac）/ `start.bat`（Windows）/ `start.sh`（Linux），
+          浏览器会自动打开。Mac 第一次如果提示「无法验证开发者」，右键 → 打开。家里其他设备用终端里打印的局域网地址访问。
+
+          把视频放进用户主目录下的 `kids-videos` 文件夹（或在设置页添加目录）即可。
+
+          ---
+          安装包内含 GPL 授权的 [FFmpeg](https://ffmpeg.org)（电脑版来自 ffmpeg-static，安卓版来自 ffmpeg-kit），
+          本项目完整源码见本仓库。
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md

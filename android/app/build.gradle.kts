@@ -1,7 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// 正式签名：环境变量 KEYSTORE_PROPERTIES 指向的文件，或 android/keystore.properties（不进仓库）。
+// 两个都没有就退回 debug 签名，方便本地随手打包。
+val keystoreProps = (System.getenv("KEYSTORE_PROPERTIES")?.let { file(it) } ?: rootProject.file("keystore.properties"))
+    .takeIf { it.exists() }
+    ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
 
 android {
     namespace = "com.webplayer"
@@ -11,16 +19,28 @@ android {
         applicationId = "com.webplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // CI 按 tag 传入，如 v1.2.3 -> versionName 1.2.3、versionCode 10203
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "1.0"
         // 平板基本都是 arm64，只打这一种架构可以把 ffmpeg 体积减到 1/4
         ndk { abiFilters += listOf("arm64-v8a") }
+    }
+
+    signingConfigs {
+        if (keystoreProps != null) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

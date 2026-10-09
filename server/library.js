@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
@@ -10,7 +11,7 @@ const CONFIG_FILE = path.join(ROOT, 'config.json');
 
 const DEFAULT_CONFIG = {
   port: 8080,
-  scanDirs: ['/Volumes/SANSUNG/kids-videos'],
+  scanDirs: [path.join(os.homedir(), 'kids-videos')],
 };
 
 fs.mkdirSync(COVERS_DIR, { recursive: true });
