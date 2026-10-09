@@ -17,6 +17,8 @@ class Scanner(private val store: Store) {
     @Volatile var error: String? = null
     @Volatile var startedAt: String? = null
     @Volatile var finishedAt: String? = null
+    /** 每次扫描结束都会调用（刷新搜索索引用） */
+    var onFinished: (() -> Unit)? = null
 
     fun statusJson(): JSONObject = JSONObject()
         .put("running", running).put("phase", phase).put("total", total).put("done", done)
@@ -108,6 +110,7 @@ class Scanner(private val store: Store) {
                 running = false
                 finishedAt = Instant.now().toString()
             }
+            onFinished?.invoke()
             onDone?.invoke(this)
         }
     }

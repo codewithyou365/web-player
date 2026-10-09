@@ -6,6 +6,7 @@ import com.webplayer.server.Deleter
 import com.webplayer.server.Folders
 import com.webplayer.server.HttpServer
 import com.webplayer.server.Scanner
+import com.webplayer.server.Search
 import com.webplayer.server.Store
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -15,6 +16,7 @@ object Backend {
     private const val TAG = "Backend"
     lateinit var store: Store; private set
     lateinit var scanner: Scanner; private set
+    private lateinit var search: Search
     private var server: HttpServer? = null
 
     val port: Int get() = server?.listeningPort ?: store.loadConfig().port
@@ -26,10 +28,12 @@ object Backend {
         if (!::store.isInitialized) {
             store = Store(app.filesDir)
             scanner = Scanner(store)
+            search = Search(store)
+            scanner.onFinished = { search.refreshIfBuilt() }
         }
         if (server?.isAlive == true) return
         val cfg = store.loadConfig()
-        val s = HttpServer(app, store, scanner, Folders(store), Deleter(store), cfg.port, ::lanAddresses)
+        val s = HttpServer(app, store, scanner, Folders(store), Deleter(store), search, cfg.port, ::lanAddresses)
         try {
             s.start(60_000, false)
             server = s

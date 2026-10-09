@@ -64,7 +64,7 @@ class Folders(private val store: Store) {
         val shows = store.loadLibrary()?.shows ?: emptyList()
         val folders = load()
         val current = if (folderId.isNullOrEmpty()) null else folders.firstOrNull { it.id == folderId }
-        if (!folderId.isNullOrEmpty() && current == null) return null
+        if (!folderId.isNullOrEmpty() && current == null) return browseDir(folderId, shows)
         val base = current?.dir
 
         val inScope = shows.filter { base == null || isUnder(it.dir, base) }
@@ -97,6 +97,65 @@ class Folders(private val store: Store) {
             .put("folder", if (current == null) JSONObject.NULL else
                 JSONObject().put("id", current.id).put("name", current.name).put("dir", current.dir).put("parent", parentId ?: JSONObject.NULL))
             .put("crumbs", crumbs).put("folders", folderCards).put("shows", direct)
+    }
+
+    /** 节目所在的上级目录（硬盘上的父目录，可以是扫描根目录）；节目本身就是根目录时为 null */
+    fun parentOf(show: Show): JSONObject? {
+        val dir = show.dir
+        if (dir == show.root) return null
+        val parent = File(dir).parentFile ?: return null
+        return JSONObject().put("id", sha1(parent.path)).put("name", parent.name)
+    }
+
+    /** 按 id 找到某个节目的上级目录（含扫描根目录），返回 (dir, root) */
+    private fun findDir(id: String, shows: List<Show>): Pair<String, String>? {
+        for (s in shows) {
+            var dir = s.dir
+            while (dir != s.root && isUnder(dir, s.root)) {
+                dir = File(dir).parent ?: break
+                if (sha1(dir) == id) return dir to s.root
+            }
+        }
+        return null
+    }
+
+    /**
+     * 浏览硬盘上的任意上级目录（没归档也能进，播放页“上级目录”用）。
+     * 直接子目录是节目就显示节目卡片，子目录里还有更深的节目就折叠成文件夹卡片。
+     */
+    private fun browseDir(id: String, shows: List<Show>): JSONObject? {
+        val (base, root) = findDir(id, shows) ?: return null
+        class Entry(val name: String, val dir: String, val relPath: String) { var count = 0; var cover: String? = null }
+        val folderMap = LinkedHashMap<String, Entry>()
+        val direct = mutableListOf<Show>()
+        for (s in shows) {
+            val dir = s.dir
+            if (dir == base || !isUnder(dir, base)) continue
+            val segs = dir.removePrefix(base + sep).split(sep)
+            if (segs.size == 1) { direct += s; continue }
+            val sub = File(base, segs[0]).path
+            val entry = folderMap.getOrPut(sub) { Entry(segs[0], sub, relOf(sub, s)) }
+            entry.count++
+            if (entry.cover == null && s.cover != null) entry.cover = s.cover
+        }
+        // 面包屑：从扫描根目录到当前目录的每一级
+        val crumbList = mutableListOf<JSONObject>()
+        var d = base
+        while (d != root && isUnder(d, root)) {
+            d = File(d).parent ?: break
+            crumbList.add(0, JSONObject().put("id", sha1(d)).put("name", File(d).name))
+        }
+        val folderCards = JSONArray()
+        folderMap.values.sortedWith(compareBy(NaturalOrder) { it.name }).forEach { e ->
+            folderCards.put(JSONObject().put("id", sha1(e.dir)).put("name", e.name).put("dir", e.dir).put("relPath", e.relPath)
+                .put("count", e.count).put("cover", e.cover ?: JSONObject.NULL).put("type", "folder").put("archived", false))
+        }
+        val showCards = JSONArray()
+        direct.sortedWith(compareBy(NaturalOrder) { it.name }).forEach { showCards.put(it.publicJson(false)) }
+        return JSONObject()
+            .put("folder", JSONObject().put("id", id).put("name", File(base).name).put("dir", base)
+                .put("parent", crumbList.lastOrNull()?.getString("id") ?: JSONObject.NULL))
+            .put("crumbs", JSONArray(crumbList)).put("folders", folderCards).put("shows", showCards)
     }
 
     /** 文件夹相对扫描根目录的路径（借用其中一个节目的 root） */

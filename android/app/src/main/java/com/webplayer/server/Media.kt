@@ -12,6 +12,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -104,26 +105,37 @@ object Media {
         if (hw) listOf("-c:v", "h264_mediacodec", "-b:v", "3000k", "-pix_fmt", "nv12")
         else listOf("-c:v", "libx264", "-preset", "ultrafast", "-crf", "24", "-pix_fmt", "yuv420p")
 
-    private fun transcodeArgs(file: String, info: Episode, startAt: Int, hw: Boolean, pipe: String): List<String> {
+    private class Codec(val args: List<String>, val copyVideo: Boolean, val copyAudio: Boolean)
+
+    /** 视频/音频编码参数：h264（非 TS）直接复制，其它转码；音频只复制 AAC */
+    private fun codecArgs(info: Episode, hw: Boolean, hls: Boolean = false): Codec {
         // TS 时间戳和 SPS/PPS 不完整，直接 copy 会丢开头几秒甚至无法解码，必须重编码
         val isTs = info.format.contains("mpegts")
-        val copyVideo = info.vcodec == "h264" && !isTs
-        val copyAudio = info.acodec == "aac" || info.acodec == "mp3"
-        val args = mutableListOf("-y", "-v", "error", "-fflags", "+genpts")
-        // -ss 放在 -i 前面：按关键帧快速定位，输出时间戳从 0 开始，前端自己加偏移
-        if (startAt > 0) args += listOf("-ss", startAt.toString())
-        args += listOf("-i", file)
+        // HLS 切片：FLV 的 SPS/PPS 只在文件头，copy 后第二个分片起就解不了码；只放心 MKV/MP4/MOV
+        val hlsSafe = !hls || Regex("matroska|mov|mp4").containsMatchIn(info.format)
+        val copyVideo = info.vcodec == "h264" && !isTs && hlsSafe
+        // 只复制 AAC：fMP4 里的 MP3 iPad Safari 不认，必须转 AAC
+        val copyAudio = info.acodec == "aac"
+        val args = mutableListOf<String>()
         if (copyVideo) args += listOf("-c:v", "copy")
         else {
             args += videoArgs(hw)
             // 平板算力有限，重编码时最多输出 720p
             args += listOf("-vf", "scale='min(1280,iw)':-2")
         }
+        args += if (copyAudio) listOf("-c:a", "copy") else listOf("-c:a", "aac", "-b:a", "160k")
+        return Codec(args, copyVideo, copyAudio)
+    }
+
+    private fun transcodeArgs(file: String, info: Episode, startAt: Int, hw: Boolean, pipe: String): List<String> {
+        val args = mutableListOf("-y", "-v", "error", "-fflags", "+genpts")
+        // -ss 放在 -i 前面：按关键帧快速定位，输出时间戳从 0 开始，前端自己加偏移
+        if (startAt > 0) args += listOf("-ss", startAt.toString())
+        args += listOf("-i", file)
+        val c = codecArgs(info, hw)
+        args += c.args
         // TS/FLV 里的 AAC 是 ADTS 封装，复制进 mp4 必须转成 ASC
-        if (copyAudio) {
-            args += listOf("-c:a", "copy")
-            if (info.acodec == "aac") args += listOf("-bsf:a", "aac_adtstoasc")
-        } else args += listOf("-c:a", "aac", "-b:a", "160k")
+        if (c.copyAudio) args += listOf("-bsf:a", "aac_adtstoasc")
         args += listOf("-sn", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", pipe)
         return args
     }
@@ -193,5 +205,114 @@ object Media {
             try { input.close() } catch (_: Exception) {}
             try { FFmpegKitConfig.closeFFmpegPipe(pipe) } catch (_: Exception) {}
         }
+    }
+
+    // ---------- HLS ----------
+    /*
+     * iPad/Safari 播放 mp4 必须服务端支持 Range，管道流做不到，会直接报错。
+     * 所以给 Safari 走 HLS：ffmpeg 从 startAt 起切成 4 秒的 TS 分片写进缓存目录，Safari 边拉边放。
+     * 每个 (节目, 集, 起点) 一个会话，空闲 5 分钟自动停掉 ffmpeg 并删目录。
+     * 只用 libx264 软编：h264_mediacodec 配 hls 输出时一帧视频都不出，ffmpeg 还照样返回成功，没法自动回退。
+     */
+    class HlsSession(val key: String, val dir: File) {
+        @Volatile var ff: FFmpegSession? = null
+        @Volatile var exited = false
+        @Volatile var failed = false
+        @Volatile var lastUsed = System.currentTimeMillis()
+    }
+
+    private const val HLS_IDLE_MS = 5 * 60 * 1000L
+    private const val HLS_MAX_SESSIONS = 4
+    private val hlsSessions = LinkedHashMap<String, HlsSession>()
+    private var hlsRoot: File? = null
+    private val NOISE = Regex("non-existing PPS|decode_slice_header|no frame!|Last message repeated|reference picture missing|Missing reference picture|mmco: unref|co located POCs")
+
+    @Synchronized
+    private fun hlsRoot(ctx: Context): File = hlsRoot ?: File(ctx.cacheDir, "hls").also { root ->
+        root.deleteRecursively()
+        hlsRoot = root
+        // 定时清理空闲会话
+        Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "hls-janitor").apply { isDaemon = true } }
+            .scheduleWithFixedDelay({ stopIdleHls() }, 1, 1, TimeUnit.MINUTES)
+    }
+
+    @Synchronized
+    private fun stopIdleHls() {
+        val now = System.currentTimeMillis()
+        hlsSessions.values.filter { now - it.lastUsed > HLS_IDLE_MS }.forEach { stopHls(it.key) }
+    }
+
+    @Synchronized
+    private fun stopHls(key: String) {
+        val s = hlsSessions.remove(key) ?: return
+        try { s.ff?.cancel() } catch (_: Exception) {}
+        s.dir.deleteRecursively()
+    }
+
+    private fun fmt(d: Double) = if (d == Math.floor(d)) d.toLong().toString() else d.toString()
+
+    /** 开 ffmpeg 往 s.dir 里切片 */
+    private fun startHls(s: HlsSession, ep: Episode, startAt: Double) {
+        s.dir.deleteRecursively()
+        s.dir.mkdirs()
+        val c = codecArgs(ep, hw = false, hls = true)
+        val args = mutableListOf("-y", "-v", "error", "-fflags", "+genpts")
+        // 转码时：先快速跳到起点前 15 秒，再在输出端精确裁到起点。
+        // FLV 等没有索引的容器直接 -ss 会落在两个关键帧之间，画面比声音晚好几秒开始，时间轴就乱了
+        // 直接复制视频时只能按关键帧切，就只做输入端定位
+        val pre = if (c.copyVideo) 0.0 else minOf(startAt, 15.0)
+        if (startAt - pre > 0) args += listOf("-ss", fmt(startAt - pre))
+        args += listOf("-i", ep.path)
+        if (pre > 0) args += listOf("-ss", fmt(pre))
+        args += listOf("-map", "0:v:0", "-map", "0:a:0?") + c.args
+        // 转码时每 4 秒强制一个关键帧，分片长度才均匀
+        if (!c.copyVideo) args += listOf("-force_key_frames", "expr:gte(t,n_forced*4)")
+        args += listOf("-sn", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
+            "-hls_segment_filename", File(s.dir, "seg%05d.ts").path, File(s.dir, "index.m3u8").path)
+        s.ff = FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { r ->
+            s.failed = !ReturnCode.isSuccess(r.returnCode) && !ReturnCode.isCancel(r.returnCode)
+            s.exited = true
+            if (s.failed) {
+                val out = r.output?.lines()?.filter { it.isNotBlank() && !NOISE.containsMatchIn(it) }?.takeLast(10)?.joinToString("\n")
+                Log.e(TAG, "[ffmpeg hls] ${File(ep.path).name} rc=${r.returnCode} $out")
+            }
+        }
+    }
+
+    /** 找到或新开一个 HLS 会话 */
+    @Synchronized
+    fun hlsSession(ctx: Context, key: String, ep: Episode, startAt: Double): HlsSession {
+        hlsSessions[key]?.let { it.lastUsed = System.currentTimeMillis(); return it }
+        // 会话太多时先关掉最久没用的
+        while (hlsSessions.size >= HLS_MAX_SESSIONS) stopHls(hlsSessions.values.minByOrNull { it.lastUsed }!!.key)
+        val s = HlsSession(key, File(hlsRoot(ctx), key.replace(Regex("[^\\w.-]"), "_")))
+        startHls(s, ep, startAt)
+        hlsSessions[key] = s
+        return s
+    }
+
+    /** 等播放列表里至少有两个分片或已经结束（最多 30 秒），返回内容；失败返回 null */
+    fun hlsPlaylist(s: HlsSession): String? {
+        val file = File(s.dir, "index.m3u8")
+        repeat(300) {
+            val text = try { file.readText() } catch (_: Exception) { "" }
+            // 只有一个很短的分片时 TARGETDURATION 可能是 0，Safari 直接判定列表无效
+            val segs = Regex("#EXTINF").findAll(text).count()
+            if (segs >= 2 || (segs >= 1 && text.contains("#EXT-X-ENDLIST"))) {
+                // EVENT 列表 Safari 默认从“直播点”开始放，指定从头放
+                return text.replaceFirst("#EXTM3U", "#EXTM3U\n#EXT-X-START:TIME-OFFSET=0,PRECISE=YES")
+            }
+            if (s.exited) return null
+            Thread.sleep(100)
+        }
+        return null
+    }
+
+    @Synchronized
+    fun hlsSegment(key: String, name: String): File? {
+        if (!Regex("^seg\\d+\\.ts$").matches(name)) return null
+        val s = hlsSessions[key] ?: return null
+        s.lastUsed = System.currentTimeMillis()
+        return File(s.dir, name)
     }
 }

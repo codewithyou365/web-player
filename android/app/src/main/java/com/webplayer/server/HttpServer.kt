@@ -22,6 +22,7 @@ class HttpServer(
     private val scanner: Scanner,
     private val folders: Folders,
     private val deleter: Deleter,
+    private val search: Search,
     port: Int,
     private val lanAddresses: () -> List<String>,
 ) : NanoHTTPD("0.0.0.0", port) {
@@ -78,6 +79,7 @@ class HttpServer(
         if (seg.isEmpty()) return asset("index.html")
         if (seg[0] == "covers" && seg.size == 2) return fileResponse(File(store.coversDir, seg[1]), "image/jpeg", "public, max-age=604800")
         if (seg[0] == "stream" && seg.size == 3 && method == Method.GET) return stream(session, seg[1], seg[2].toIntOrNull() ?: -1)
+        if (seg[0] == "hls" && seg.size == 5 && method == Method.GET) return hls(seg[1], seg[2].toIntOrNull() ?: -1, seg[3], seg[4])
         if (seg[0] != "api") return asset(seg.joinToString("/"))
 
         val p = seg.drop(1)
@@ -89,7 +91,9 @@ class HttpServer(
                     .put("shows", JSONArray().also { a -> l?.shows?.forEach { a.put(it.publicJson(false)) } }))
             }
             p.size == 2 && p[0] == "shows" && m == Method.GET ->
-                return findShow(p[1])?.let { ok(it.publicJson(true).put("fav", store.loadFavorites().optLong(it.id, 0))) } ?: notFound()
+                return findShow(p[1])?.let {
+                    ok(it.publicJson(true).put("fav", store.loadFavorites().optLong(it.id, 0)).put("parent", folders.parentOf(it) ?: JSONObject.NULL))
+                } ?: notFound()
 
             // 归档
             p == listOf("browse") && m == Method.GET -> {
@@ -97,9 +101,17 @@ class HttpServer(
                 // 喜欢的节目排前面，按喜欢的时间倒序；其余保持原顺序（sortedByDescending 是稳定的）
                 val favs = store.loadFavorites()
                 val arr = r.getJSONArray("shows")
-                val sorted = List(arr.length()) { arr.getJSONObject(it) }
-                    .onEach { it.put("fav", favs.optLong(it.getString("id"), 0)) }
-                    .sortedByDescending { it.getLong("fav") }
+                val list = MutableList(arr.length()) { arr.getJSONObject(it) }
+                list.forEach { it.put("fav", favs.optLong(it.getString("id"), 0)) }
+                // 首页：喜欢的节目即使被归档进文件夹里，也提到首页显示（文件夹里照样还有）
+                if (query(session, "folder").isNullOrEmpty()) {
+                    val shown = list.map { it.getString("id") }.toSet()
+                    store.loadLibrary()?.shows?.forEach { s ->
+                        val fav = favs.optLong(s.id, 0)
+                        if (fav > 0 && s.id !in shown) list += s.publicJson(false).put("fav", fav)
+                    }
+                }
+                val sorted = list.sortedByDescending { it.getLong("fav") }
                 return ok(r.put("shows", JSONArray(sorted)))
             }
             p.size == 3 && p[0] == "shows" && p[2] == "ancestors" && m == Method.GET -> {
@@ -141,11 +153,13 @@ class HttpServer(
             // 彻底删除
             p.size == 2 && p[0] == "shows" && m == Method.DELETE -> return try {
                 val r = deleter.deleteShow(p[1])
+                search.refreshIfBuilt()
                 Log.i(TAG, "[delete] 节目 ${p[1]} 删除 ${r.removed.size} 个文件 ${r.errors}")
                 ok(JSONObject().put("removed", JSONArray(r.removed)).put("errors", JSONArray(r.errors)))
             } catch (e: Exception) { bad(e.message ?: "删除失败") }
             p.size == 4 && p[0] == "shows" && p[2] == "episodes" && m == Method.DELETE -> return try {
                 val r = deleter.deleteEpisode(p[1], p[3].toIntOrNull() ?: -1)
+                search.refreshIfBuilt()
                 Log.i(TAG, "[delete] 单集 ${r.removed.firstOrNull()}")
                 ok(JSONObject().put("removed", JSONArray(r.removed)).put("show", r.show?.publicJson(true) ?: JSONObject.NULL))
             } catch (e: Exception) { bad(e.message ?: "删除失败") }
@@ -177,6 +191,26 @@ class HttpServer(
             // 最近播放（首页前 12 个）/ 历史播放（全部，只能手动删除）
             p == listOf("recent") && m == Method.GET -> return ok(playHistory(12))
             p == listOf("history") && m == Method.GET -> return ok(playHistory(0))
+
+            // 搜索：要先建立索引（设置页 / 搜索页按钮），见 Search.kt
+            p == listOf("search") && m == Method.GET -> {
+                val q = (query(session, "q") ?: "").trim().take(200)
+                if (!search.isBuilt()) return ok(JSONObject().put("needIndex", true).put("results", JSONArray()))
+                val shows = (store.loadLibrary()?.shows ?: emptyList()).associateBy { it.id }
+                val favs = store.loadFavorites()
+                val results = JSONArray()
+                // 索引里存的是文件路径，按路径找回当前的集序号（删过集之后序号会变）；已删掉的跳过
+                for (r in if (q.isEmpty()) emptyList() else search.search(q)) {
+                    val s = shows[r.showId] ?: continue
+                    val episode = r.file?.let { f -> s.episodes.indexOfFirst { it.path == f } }
+                    if (episode == -1) continue
+                    results.put(s.publicJson(false).put("fav", favs.optLong(s.id, 0)).put("episode", episode ?: JSONObject.NULL)
+                        .put("epTitle", episode?.let { s.episodes[it].title } ?: "").put("pick", r.pick).put("reason", r.reason))
+                }
+                return ok(JSONObject().put("results", results))
+            }
+            p == listOf("search", "index") && m == Method.GET -> return ok(search.status())
+            p == listOf("search", "index") && m == Method.POST -> return ok(search.buildIndex())
 
             p == listOf("config") && m == Method.GET -> return ok(store.loadConfig().toJson())
             p == listOf("config") && m == Method.PUT -> {
@@ -243,6 +277,24 @@ class HttpServer(
             it.addHeader("Cache-Control", "no-store")
             it.addHeader("Accept-Ranges", "none")
         }
+    }
+
+    /** Safari/iPad 用 HLS（mp4 管道流不支持 Range，Safari 不放）。t 是起点秒数，拖动时换一个 t 重新开会话 */
+    private fun hls(id: String, index: Int, tRaw: String, name: String): Response {
+        val s = findShow(id)
+        val ep = s?.episodes?.getOrNull(index)
+        if (ep == null || !File(ep.path).exists()) return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "")
+        val t = (tRaw.toDoubleOrNull() ?: 0.0).coerceIn(0.0, maxOf(0.0, ep.duration - 1))
+        val key = "${s.id}_${ep.index}_$t"
+        if (name == "index.m3u8") {
+            val sess = Media.hlsSession(ctx, key, ep, t)
+            val text = Media.hlsPlaylist(sess) ?: return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "")
+            return newFixedLengthResponse(Response.Status.OK, "application/vnd.apple.mpegurl", text).also { it.addHeader("Cache-Control", "no-store") }
+        }
+        Media.hlsSession(ctx, key, ep, t)
+        val f = Media.hlsSegment(key, name)
+        if (f == null || !f.isFile) return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "")
+        return newFixedLengthResponse(Response.Status.OK, "video/mp2t", FileInputStream(f), f.length())
     }
 
     /** 原生 mp4：支持 Range，浏览器靠它拖进度条 */
